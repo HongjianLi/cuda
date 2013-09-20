@@ -4,5 +4,6 @@
 !README.md
 !cu_helper.h
 !Makefile
+!*.c
 !*.cpp
 !*.cu
