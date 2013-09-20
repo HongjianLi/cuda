@@ -12,7 +12,7 @@ inline static int cci(const int compute_capability_major, const int compute_capa
 	return i;
 }
 
-CUDA_CB void callback(CUstream stream, CUresult error, void* data)
+void CUDA_CB callback(CUstream stream, CUresult error, void* data)
 {
 	checkCudaErrors(error);
 	printf("callback, h_e[0] = %f\n", *(float*)data);
