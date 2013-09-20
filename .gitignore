@@ -5,6 +5,8 @@
 !cu_helper.h
 !embedSources.sh
 !Makefile
+!cuda.sln
+!*.vcxproj
 !*.c
 !*.cpp
 !*.cu
