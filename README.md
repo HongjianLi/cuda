@@ -8,11 +8,6 @@ deviceQuery
 
 This sample enumerates the properties of the CUDA devices present in the system.
 
-deviceQueryC
-------------
-
-This sample enumerates the properties of the CUDA devices present in the system and outputs them in CSV format.
-
 bandwidthTest
 -------------
 
