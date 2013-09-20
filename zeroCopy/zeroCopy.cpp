@@ -24,9 +24,9 @@ int main(int argc, char *argv[])
 		checkCudaErrors(cuCtxCreate(&context, CU_CTX_MAP_HOST, device));
 
 		CUmodule module;
-		checkCudaErrors(cuModuleLoad(&module, "vectorAdd.cubin")); // nvcc -cubin -arch=sm_11 vectorAdd.cu
+		checkCudaErrors(cuModuleLoad(&module, "zeroCopy.cubin")); // nvcc -cubin -arch=sm_11 vectorAdd.cu
 		CUfunction function;
-		checkCudaErrors(cuModuleGetFunction(&function, module, "vectorAdd"));
+		checkCudaErrors(cuModuleGetFunction(&function, module, "zeroCopy"));
 
 		float* h_a;
 		float* h_b;

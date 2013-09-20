@@ -1,14 +1,14 @@
 CC=clang -O2
 NVCC=nvcc -ftz=true -prec-div=false -prec-sqrt=false -use_fast_math
 
-vectorAdd: vectorAdd.o vectorAdd.cubin
+zeroCopy: zeroCopy.o zeroCopy.cubin
 	$(CC) -o $@ $< -L${CUDA_ROOT}/lib64 -lcuda
 
-vectorAdd.o: vectorAdd.cpp
+zeroCopy.o: zeroCopy.cpp
 	$(CC) -o $@ $< -c -I${CUDA_ROOT}/include
 
-vectorAdd.cubin: vectorAdd.cu
+zeroCopy.cubin: zeroCopy.cu
 	$(NVCC) -o $@ $< -arch=sm_11 -cubin
 
 clean:
-	rm -f vectorAdd vectorAdd.o vectorAdd.cubin
+	rm -f zeroCopy zeroCopy.o zeroCopy.cubin
