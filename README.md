@@ -1,2 +1,2 @@
-cuda
-====
+CUDA Samples
+============
