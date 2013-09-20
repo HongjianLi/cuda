@@ -3,6 +3,7 @@
 !LICENSE
 !README.md
 !cu_helper.h
+!embedSources.sh
 !Makefile
 !*.c
 !*.cpp

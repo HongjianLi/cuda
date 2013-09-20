@@ -1,6 +1,6 @@
 CC=clang++ -std=c++11 -O2
 NVCC=nvcc -ptx -ftz=true -prec-div=false -prec-sqrt=false -use_fast_math# -src-in-ptx -g -G -Xcompiler -rdynamic -lineinfo -maxrregcount=N
-ES=~/idock/embedSources.sh
+ES=../embedSources.sh
 
 vectorAdd: vectorAdd.o
 	$(CC) -o $@ $^ -lcuda
