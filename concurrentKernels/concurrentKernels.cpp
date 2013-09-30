@@ -1,3 +1,4 @@
+#include <time.h>
 #include "../cu_helper.h"
 
 int main(int argc, char *argv[])
