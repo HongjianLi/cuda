@@ -44,8 +44,8 @@ int main(int argc, char *argv[])
 	checkCudaErrors(cuEventRecord(beg, 0));
 	for (i = 0; i < num_kernels; ++i)
 	{
-		CUdeviceptr addr = d_a + i;
-		void* args[] = { &addr, &time_clocks };
+		CUdeviceptr d_i = d_a + sizeof(clock_t) * i;
+		void* args[] = { &d_i, &time_clocks };
 		checkCudaErrors(cuLaunchKernel(clock_block, 1, 1, 1, 1, 1, 1, 0, streams[i], args, NULL));
 		checkCudaErrors(cuEventRecord(events[i], streams[i]));
 		checkCudaErrors(cuStreamWaitEvent(streams[num_streams-1], events[i], 0));
