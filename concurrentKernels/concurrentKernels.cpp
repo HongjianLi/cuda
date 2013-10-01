@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
 	checkCudaErrors(cuEventRecord(end, 0));
 	checkCudaErrors(cuEventSynchronize(end));
 	checkCudaErrors(cuEventElapsedTime(&elapsed, beg, end));
-	printf("%d kernels, each %d ms\n", num_streams, num_milliseconds);
+	printf("%d streams, each %d kernels, each %d ms\n", num_streams, 1, num_milliseconds);
 	printf("    serial execution: %d ms\n", num_milliseconds * (((num_streams - 1) >> 0) + 1));
 	printf("concurrent execution: %d ms\n", num_milliseconds * (((num_streams - 1) >> 5) + 1));
 	printf("   current execution: %.3f ms\n", elapsed);
