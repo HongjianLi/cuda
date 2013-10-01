@@ -38,9 +38,10 @@ int main(int argc, char *argv[])
 	checkCudaErrors(cuEventRecord(end, 0));
 	checkCudaErrors(cuEventSynchronize(end));
 	checkCudaErrors(cuEventElapsedTime(&elapsed, beg, end));
-	printf("Expected time for serial execution of %d kernels = %dms\n", num_streams, num_milliseconds * num_streams);
-	printf("Expected time for concurrent execution of %d kernels = %dms\n", num_streams, num_milliseconds);
-	printf("Measured time for sample = %.3fms\n", elapsed);
+	printf("%d kernels, each %d ms\n", num_streams, num_milliseconds);
+	printf("    serial execution: %d ms\n", num_milliseconds * (((num_streams - 1) >> 0) + 1));
+	printf("concurrent execution: %d ms\n", num_milliseconds * (((num_streams - 1) >> 5) + 1));
+	printf("   current execution: %.3f ms\n", elapsed);
 	cuEventDestroy(end);
 	cuEventDestroy(beg);
 	for (int i = 0; i < num_streams; ++i)
