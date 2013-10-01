@@ -11,7 +11,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "jit", "jit\jit.vcxproj", "{
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vectorAdd", "vectorAdd\vectorAdd.vcxproj", "{5BABAE65-4CEB-4581-BA55-26EE5370D9C7}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "concurrentKernels", "concurrentKernels\concurrentKernels.vcxproj", "{CCA5BC93-4842-4D0E-AEC1-0B577C9784D6}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hyperQ", "hyperQ\hyperQ.vcxproj", "{CCA5BC93-4842-4D0E-AEC1-0B577C9784D6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

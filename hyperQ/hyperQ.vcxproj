@@ -24,8 +24,8 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{CCA5BC93-4842-4D0E-AEC1-0B577C9784D6}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>concurrentKernels</RootNamespace>
-    <ProjectName>concurrentKernels</ProjectName>
+    <RootNamespace>hyperQ</RootNamespace>
+    <ProjectName>hyperQ</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -141,10 +141,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="concurrentKernels.cpp" />
+    <ClCompile Include="hyperQ.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="concurrentKernels.cu">
+    <CudaCompile Include="hyperQ.cu">
       <NvccCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">cubin</NvccCompilation>
       <NvccCompilation Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">cubin</NvccCompilation>
       <NvccCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">cubin</NvccCompilation>
