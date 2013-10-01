@@ -3,31 +3,25 @@
 
 int main(int argc, char *argv[])
 {
-	int num_kernels = 8;
-	int num_streams = num_kernels + 1;
-	int num_bytes = sizeof(clock_t) * num_kernels;
-	float kernel_time = 10;
-	int clock_rate;
-	clock_t time_clocks;
+	const int num_milliseconds = 10;
+	const int num_streams = 32;
 	CUdevice device;
 	CUcontext context;
 	CUmodule module;
-	CUfunction clock_block, sum;
-	clock_t *h_a;
-	CUdeviceptr d_a;
+	CUfunction spin;
 	CUstream *streams;
-	float elapsed_time;
-	CUevent beg, end, *events;
+	CUevent beg, end;
+	int clock_rate;
+	clock_t num_clocks;
+	float elapsed;
 	int i;
 	checkCudaErrors(cuInit(0));
-	checkCudaErrors(cuDeviceGetAttribute(&clock_rate, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, 0));
 	checkCudaErrors(cuDeviceGet(&device, 0));
+	checkCudaErrors(cuDeviceGetAttribute(&clock_rate, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, device));
 	checkCudaErrors(cuCtxCreate(&context, CU_CTX_SCHED_AUTO, device));
 	checkCudaErrors(cuModuleLoad(&module, "concurrentKernels.cubin"));
-	checkCudaErrors(cuModuleGetFunction(&clock_block, module, "clock_block"));
-	checkCudaErrors(cuModuleGetFunction(&sum, module, "sum"));
-	checkCudaErrors(cuMemAllocHost((void **)&h_a, num_bytes));
-	checkCudaErrors(cuMemAlloc(&d_a, num_bytes));
+	checkCudaErrors(cuModuleGetFunction(&spin, module, "spin"));
+	num_clocks = clock_rate * num_milliseconds;
 	streams = (CUstream*)malloc(sizeof(CUstream) * num_streams);
 	for (i = 0; i < num_streams; ++i)
 	{
@@ -35,39 +29,18 @@ int main(int argc, char *argv[])
 	}
 	checkCudaErrors(cuEventCreate(&beg, CU_EVENT_DEFAULT));
 	checkCudaErrors(cuEventCreate(&end, CU_EVENT_DEFAULT));
-	events = (CUevent*)malloc(sizeof(CUevent) * num_kernels);
-	for (i = 0; i < num_kernels; ++i)
-	{
-		checkCudaErrors(cuEventCreate(&events[i], CU_EVENT_DISABLE_TIMING));
-	}
-	time_clocks = (clock_t)(clock_rate * kernel_time);
 	checkCudaErrors(cuEventRecord(beg, 0));
-	for (i = 0; i < num_kernels; ++i)
+	for (i = 0; i < num_streams; ++i)
 	{
-		CUdeviceptr d_i = d_a + sizeof(clock_t) * i;
-		void* args[] = { &d_i, &time_clocks };
-		checkCudaErrors(cuLaunchKernel(clock_block, 1, 1, 1, 1, 1, 1, 0, streams[i], args, NULL));
-		checkCudaErrors(cuEventRecord(events[i], streams[i]));
-		checkCudaErrors(cuStreamWaitEvent(streams[num_streams-1], events[i], 0));
+		void* args[] = { &num_clocks };
+		checkCudaErrors(cuLaunchKernel(spin, 1, 1, 1, 1, 1, 1, 0, streams[i], args, NULL));
 	}
-	void* args[] = { &d_a, &num_kernels };
-	checkCudaErrors(cuLaunchKernel(sum, 1, 1, 1, 32, 1, 1, 0, streams[num_streams - 1], args, NULL));
-	checkCudaErrors(cuMemcpyDtoHAsync(h_a, d_a, sizeof(clock_t), streams[num_streams - 1]));
 	checkCudaErrors(cuEventRecord(end, 0));
 	checkCudaErrors(cuEventSynchronize(end));
-	checkCudaErrors(cuEventElapsedTime(&elapsed_time, beg, end));
-	printf("Expected time for serial execution of %d kernels = %.3fms\n", num_kernels, kernel_time * num_kernels);
-	printf("Expected time for concurrent execution of %d kernels = %.3fms\n", num_kernels, kernel_time);
-	printf("Measured time for sample = %.3fms\n", elapsed_time);
-	if (h_a[0] <= time_clocks * num_kernels)
-	{
-		printf("Test failed!\n");
-	}
-	for (int i = 0; i < num_kernels; ++i)
-	{
-		cuEventDestroy(events[i]);
-	}
-	free(events);
+	checkCudaErrors(cuEventElapsedTime(&elapsed, beg, end));
+	printf("Expected time for serial execution of %d kernels = %dms\n", num_streams, num_milliseconds * num_streams);
+	printf("Expected time for concurrent execution of %d kernels = %dms\n", num_streams, num_milliseconds);
+	printf("Measured time for sample = %.3fms\n", elapsed);
 	cuEventDestroy(end);
 	cuEventDestroy(beg);
 	for (int i = 0; i < num_streams; ++i)
@@ -75,8 +48,6 @@ int main(int argc, char *argv[])
 		cuStreamDestroy(streams[i]);
 	}
 	free(streams);
-	cuMemFree(d_a);
-	cuMemFreeHost(h_a);
 	checkCudaErrors(cuModuleUnload(module));
 	checkCudaErrors(cuCtxDestroy(context));
 }
