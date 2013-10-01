@@ -34,8 +34,7 @@ int main(int argc, char *argv[])
 	}
 	checkCudaErrors(cuEventCreate(&beg, CU_EVENT_DEFAULT));
 	checkCudaErrors(cuEventCreate(&end, CU_EVENT_DEFAULT));
-	time_clocks = (clock_t)(clock_rate * kernel_time);
-	clock_t total_clocks = 0;
+	time_clocks = clock_rate * kernel_time;
 	checkCudaErrors(cuEventRecord(beg, 0));
 	for (int i = 0; i < num_streams; ++i)
 	{
