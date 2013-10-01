@@ -32,8 +32,7 @@ int main(int argc, char *argv[])
 	checkCudaErrors(cuEventRecord(beg, 0));
 	for (i = 0; i < num_streams; ++i)
 	{
-		void* args[] = { &num_clocks };
-		checkCudaErrors(cuLaunchKernel(spin, 1, 1, 1, 1, 1, 1, 0, streams[i], args, NULL));
+		checkCudaErrors(cuLaunchKernel(spin, 1, 1, 1, 1, 1, 1, 0, streams[i], (void*[]){ &num_clocks }, NULL));
 	}
 	checkCudaErrors(cuEventRecord(end, 0));
 	checkCudaErrors(cuEventSynchronize(end));
