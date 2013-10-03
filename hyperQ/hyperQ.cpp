@@ -33,11 +33,12 @@ int main(int argc, char *argv[])
 	checkCudaErrors(cuEventCreate(&beg, CU_EVENT_DEFAULT));
 	checkCudaErrors(cuEventCreate(&end, CU_EVENT_DEFAULT));
 	checkCudaErrors(cuEventRecord(beg, 0));
+	void* args[] = { &num_clocks };
 	for (s = 0; s < num_streams; ++s)
 	{
 		for (k = 0; k < num_kernels; ++k)
 		{
-			checkCudaErrors(cuLaunchKernel(function, 1, 1, 1, 1, 1, 1, 0, streams[s], (void*[]){ &num_clocks }, NULL));
+			checkCudaErrors(cuLaunchKernel(function, 1, 1, 1, 1, 1, 1, 0, streams[s], args, NULL));
 		}
 	}
 	checkCudaErrors(cuEventRecord(end, 0));
