@@ -27,3 +27,8 @@ vectorAdd
 ---------
 
 This sample uses async API, dynamic ptx version selection, and constant and shared memory to add two vectors of float.
+
+hyperQ
+------
+
+This sample uses multiple streams to exploit the HyperQ technology.
