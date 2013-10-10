@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
 				break;
 			}
 		}
-		printf("vectorAdd %s\n\n", passed ? "passed" : "failed");
+		printf("zeroCopy %s\n\n", passed ? "passed" : "failed");
 		checkCudaErrors(cuMemFreeHost(h_a));
 		checkCudaErrors(cuMemFreeHost(h_b));
 		checkCudaErrors(cuMemFreeHost(h_c));
