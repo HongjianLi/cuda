@@ -44,11 +44,11 @@ int main(int argc, char *argv[])
 	checkCudaErrors(cuEventRecord(end, 0));
 	checkCudaErrors(cuEventSynchronize(end));
 	checkCudaErrors(cuEventElapsedTime(&elapsed, beg, end));
-	cuEventDestroy(end);
-	cuEventDestroy(beg);
+	checkCudaErrors(cuEventDestroy(end));
+	checkCudaErrors(cuEventDestroy(beg));
 	for (s = 0; s < num_streams; ++s)
 	{
-		cuStreamDestroy(streams[s]);
+		checkCudaErrors(cuStreamDestroy(streams[s]));
 	}
 	free(streams);
 	checkCudaErrors(cuModuleUnload(module));
