@@ -1,4 +1,4 @@
-CC=clang++ -O2
+CC=clang++ -std=c++11 -O2
 NVCC=nvcc
 
 multiDevice: multiDevice.o multiDevice.cubin
