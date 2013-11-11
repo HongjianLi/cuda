@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
 		CUdevice device;
 		checkCudaErrors(cuDeviceGet(&device, d));
 		CUcontext context;
-		checkCudaErrors(cuCtxCreate(&context, CU_CTX_SCHED_AUTO/*CU_CTX_SCHED_YIELD*/, device));
+		checkCudaErrors(cuCtxCreate(&context, CU_CTX_SCHED_AUTO/*CU_CTX_SCHED_YIELD*/ | CU_CTX_MAP_HOST, device));
 //		checkCudaErrors(cuCtxSetCacheConfig(CU_FUNC_CACHE_PREFER_L1));
 //		checkCudaErrors(cuCtxSetSharedMemConfig(CU_SHARED_MEM_CONFIG_EIGHT_BYTE_BANK_SIZE));
 
@@ -131,19 +131,17 @@ int main(int argc, char* argv[])
 
 		CUstream stream;
 		checkCudaErrors(cuStreamCreate(&stream, CU_STREAM_NON_BLOCKING/*CU_STREAM_DEFAULT*/));
-// TODO: simpleZeroCopy, HtoD
 		float* h_l;
 		float* h_e;
-		checkCudaErrors(cuMemAllocHost((void**)&h_l, sizeof(float) * lws));
-		checkCudaErrors(cuMemAllocHost((void**)&h_e, sizeof(float) * lws));
+		checkCudaErrors(cuMemHostAlloc((void**)&h_l, sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
+		checkCudaErrors(cuMemHostAlloc((void**)&h_e, sizeof(float) * lws, 0));
 		memcpy(h_l, p_l, sizeof(float) * lws);
 		CUdeviceptr d_s;
 		CUdeviceptr d_l;
 		checkCudaErrors(cuMemAlloc(&d_s, sizeof(float) * gws));
-		checkCudaErrors(cuMemAlloc(&d_l, sizeof(float) * lws));
 //		checkCudaErrors(cuMemsetD32(d_s, 0, gws));
 		checkCudaErrors(cuMemsetD32Async(d_s, 0, gws, stream));
-		checkCudaErrors(cuMemcpyHtoDAsync(d_l, h_l, sizeof(float) * lws, stream));
+		checkCudaErrors(cuMemHostGetDevicePointer(&d_l, h_l, 0));
 		void* args[] = { &d_s, &d_l };
 //		checkCudaErrors(cuLaunchKernel(function, gws / lws, 1, 1, lws, 1, 1, 0/*dynamic smem*/, NULL/*stream*/, args, NULL));
 //		checkCudaErrors(cuCtxSynchronize());
@@ -169,7 +167,6 @@ int main(int argc, char* argv[])
 			}
 		}
 		printf("vectorAdd %s\n\n", passed ? "passed" : "failed");
-		checkCudaErrors(cuMemFree(d_l));
 		checkCudaErrors(cuMemFree(d_s));
 		checkCudaErrors(cuMemFreeHost(h_e));
 		checkCudaErrors(cuMemFreeHost(h_l));
