@@ -1,5 +1,6 @@
 #include <string.h>
 #include <math.h>
+#include <time.h>
 #include "../cu_helper.h"
 #include "vectorAdd.h"
 
@@ -23,6 +24,7 @@ int main(int argc, char* argv[])
 	const unsigned int lws = 256;
 	const unsigned int gws = 32 * lws;
 	float* p_l = (float*)malloc(sizeof(float) * lws);
+	srand(time(0));
 	for (int i = 0; i < lws; ++i)
 	{
 		p_l[i] = rand() / (float)RAND_MAX;
