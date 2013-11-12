@@ -1,14 +1,22 @@
 #include <vector>
+#include <time.h>
 #include "../cu_helper.h"
 using namespace std;
 
 volatile static int count = 0;
 
+void spin(const clock_t num_clocks)
+{
+	for (const clock_t threshold = clock() + num_clocks; clock() < threshold;);
+}
+
 // The callback will block later work in the stream until it is finished. Callbacks must return promptly. Callbacks must not make any CUDA API calls.
 void CUDA_CB callback(CUstream stream, CUresult error, void* data)
 {
 	checkCudaErrors(error);
-	printf("%d\n", *(int*)data);
+	printf("a%d\n", *(int*)data);
+	spin(5e+6);
+	printf("b%d\n", *(int*)data);
 	++count;
 }
 
@@ -73,16 +81,18 @@ int main(int argc, char* argv[])
 
 //		void* args[] = { &num_clocks };
 //		checkCudaErrors(cuLaunchKernel(function, 1, 1, 1, 1, 1, 1, 0, NULL, args, NULL));
+//		checkCudaErrors(cuStreamAddCallback(0, callback, &i, 0));
 		checkCudaErrors(cuStreamAddCallback(0, callback, &i, 0));
 
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
 	}
 	while (count < num_devices);
-
+	printf("cleaning up\n");
 	// Cleanup.
 	for (int i = 0; i < num_devices; ++i)
 	{
 		checkCudaErrors(cuCtxDestroy(contexts[i]));
 	}
+	printf("exiting\n");
 }
