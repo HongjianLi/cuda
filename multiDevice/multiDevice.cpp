@@ -1,9 +1,13 @@
 #include <vector>
-#include <time.h>
+#include <mutex>
+#include <condition_variable>
+#include <ctime>
 #include "../cu_helper.h"
 using namespace std;
 
-volatile static int count = 0;
+static mutex m;
+static condition_variable completion;
+vector<int> idleDevices;
 
 void spin(const clock_t num_clocks)
 {
@@ -14,20 +18,20 @@ void spin(const clock_t num_clocks)
 void CUDA_CB callback(CUstream stream, CUresult error, void* data)
 {
 	checkCudaErrors(error);
-	printf("a%d\n", *(int*)data);
-	spin(5e+6);
-	printf("b%d\n", *(int*)data);
-	++count;
+	lock_guard<mutex> guard(m);
+//	idleDevices.push_back(*(int*)data);
+	completion.notify_one();
 }
 
 int main(int argc, char* argv[])
 {
 	// Initialize constants.
+	const size_t num_ligands = 20;
 	clock_t num_clocks = 1e+9;
 
 	// Initialize the CUDA driver API.
 	checkCudaErrors(cuInit(0));
-	
+
 	// Get the number of devices with compute capability 1.0 or greater that are available for execution.
 	int num_devices;
 	checkCudaErrors(cuDeviceGetCount(&num_devices));
@@ -63,6 +67,17 @@ int main(int argc, char* argv[])
 		CUfunction function;
 		checkCudaErrors(cuModuleGetFunction(&function, module, "spin"));
 
+		// Enqueue a synchronization event to make sure the device is ready for execution.
+		size_t idx = contexts.size();
+		checkCudaErrors(cuStreamAddCallback(0, []CUDA_CB (CUstream stream, CUresult error, void* data)
+		{
+			checkCudaErrors(error);
+			lock_guard<mutex> guard(m);
+			printf("%d\n", *(int*)data);
+			idleDevices.push_back(*(int*)data);
+			completion.notify_one();
+		}, &idx, 0));
+
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
 
@@ -74,25 +89,23 @@ int main(int argc, char* argv[])
 	// Update the number of devices with compute capability 1.1 or greater.
 	num_devices = contexts.size();
 
-	for (int i = 0; i < num_devices; ++i)
+	size_t num_completed_tasks = 0;
+//	while (num_completed_tasks < num_ligands)
 	{
-		// Make a context current.
-		checkCudaErrors(cuCtxPushCurrent(contexts[i]));
+		unique_lock<mutex> lock(m);
+		completion.wait(lock);
 
-//		void* args[] = { &num_clocks };
-//		checkCudaErrors(cuLaunchKernel(function, 1, 1, 1, 1, 1, 1, 0, NULL, args, NULL));
-//		checkCudaErrors(cuStreamAddCallback(0, callback, &i, 0));
-		checkCudaErrors(cuStreamAddCallback(0, callback, &i, 0));
+		// Make a context current.
+//		checkCudaErrors(cuCtxPushCurrent(contexts[i]));
 
 		// Pop the current context.
-		checkCudaErrors(cuCtxPopCurrent(NULL));
+//		checkCudaErrors(cuCtxPopCurrent(NULL));
 	}
-	while (count < num_devices);
-	printf("cleaning up\n");
+
+
 	// Cleanup.
 	for (int i = 0; i < num_devices; ++i)
 	{
 		checkCudaErrors(cuCtxDestroy(contexts[i]));
 	}
-	printf("exiting\n");
 }
