@@ -99,13 +99,14 @@ int main(int argc, char* argv[])
 		// Enqueue a synchronization event to make sure the device is ready for execution.
 		size_t idx = contexts.size();
 		idle.push_back(0);
-/*		checkCudaErrors(cuStreamAddCallback(0, []CUDA_CB (CUstream stream, CUresult error, void* data)
+		checkCudaErrors(cuStreamAddCallback(0, []CUDA_CB (CUstream stream, CUresult error, void* data)
 		{
 			checkCudaErrors(error);
-			lock_guard<mutex> guard(m);
-			idle.push_back(*(int*)data);
-			completion.notify_one();
-		}, &idx, 0));*/
+			printf("%d\n", *reinterpret_cast<int*>(data));
+//			lock_guard<mutex> guard(m);
+//			idle.push_back(*(int*)data);
+//			completion.notify_one();
+		}, &idx, 0));
 
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
@@ -182,6 +183,7 @@ int main(int argc, char* argv[])
 			io.post([&]()
 			{
 				lig->write();
+				safe_printf();
 				checkCudaErrors(cuCtxPushCurrent(contexts[lig->dev]));
 				checkCudaErrors(cuMemFree(lig->d_s));
 				checkCudaErrors(cuMemFreeHost(lig->h_e));
