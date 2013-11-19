@@ -35,9 +35,7 @@ template <typename T>
 class safe_vector : public vector<T>
 {
 public:
-	safe_vector(const size_t n) : vector<T>(n)
-	{
-	}
+	using vector<T>::vector;
 	void safe_push_back(const T x)
 	{
 		lock_guard<mutex> guard(m);

@@ -10,29 +10,6 @@ void spin(const clock_t num_clocks)
 	for (const clock_t threshold = clock() + num_clocks; clock() < threshold;);
 }
 
-template <typename T>
-class safe_vector : public vector<T>
-{
-public:
-	void safe_push_back(const T x)
-	{
-		lock_guard<mutex> guard(m);
-		this->push_back(x);
-		cv.notify_one();
-	}
-	T safe_pop_back()
-	{
-		unique_lock<mutex> lock(m);
-		if (this->empty()) cv.wait(lock);
-		const T x = this->back();
-		this->pop_back();
-		return x;
-	}
-private:
-	mutex m;
-	condition_variable cv;
-};
-
 class ligand
 {
 public:
@@ -60,12 +37,36 @@ public:
 };
 
 template <typename T>
-class callback_data_wrapper
+class safe_vector : public vector<T>
 {
 public:
-	callback_data_wrapper(const T e, safe_vector<T>& v, ligand&& lig_) : e(e), v(v), lig(move(lig_)) {}
-	const T e;
-	safe_vector<T>& v;
+	void safe_push_back(const T x)
+	{
+		lock_guard<mutex> guard(m);
+		this->push_back(x);
+		cv.notify_one();
+	}
+	T safe_pop_back()
+	{
+		unique_lock<mutex> lock(m);
+		if (this->empty()) cv.wait(lock);
+		const T x = this->back();
+		this->pop_back();
+		return x;
+	}
+private:
+	mutex m;
+	condition_variable cv;
+};
+
+template <typename T>
+class callback_data
+{
+public:
+	callback_data(const T dev, safe_vector<T>& idle, io_service_pooled& io, ligand&& lig_) : dev(dev), idle(idle), io(io), lig(move(lig_)) {}
+	const T dev;
+	safe_vector<T>& idle;
+	io_service_pooled& io;
 	ligand lig;
 };
 
@@ -131,13 +132,14 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuMemcpyHtoDAsync(d_p, h_p, sizeof(float) * 16, 0));
 
 		// Enqueue a synchronization event to make sure the device is ready for execution.
-/*		callback_data_wrapper<int> w(contexts.size(), idle);
+/*		auto data = new callback_data<int>(contexts.size(), idle, io);
 		checkCudaErrors(cuStreamAddCallback(0, []CUDA_CB (CUstream stream, CUresult error, void* data)
 		{
 			checkCudaErrors(error);
-			auto w = reinterpret_cast<callback_data_wrapper<int>*>(data);
-			w->v.safe_push_back(w->e);
-		}, &w, 0));*/
+			auto p = reinterpret_cast<callback_data<int>*>(data);
+			p->idle.safe_push_back(p->dev);
+			delete p;
+		}, data, 0));*/
 
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
@@ -153,7 +155,6 @@ int main(int argc, char* argv[])
 	const directory_iterator const_dir_iter;
 	for (directory_iterator dir_iter("."); dir_iter != const_dir_iter; ++dir_iter)
 	{
-		printf("%s\n", dir_iter->path().c_str());
 //		io.post([&]()
 //		{
 //		});
@@ -169,11 +170,15 @@ int main(int argc, char* argv[])
 //			lock_guard<mutex> guard(m);
 			if (false)
 			{
-				io.init(1);
-				io.post([&]()
+				const size_t n = 5;
+				io.init(n);
+				for (size_t i = 0; i < n; ++i)
 				{
-					io.done();
-				});
+					io.post([&]()
+					{
+						io.done();
+					});
+				}
 				io.sync();
 				for (auto& context : contexts)
 				{
@@ -197,36 +202,28 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuLaunchKernel(functions[dev], 1, 1, 1, 1, 1, 1, 0, NULL, (void*[]){ &lig.d_s, &lig.d_l }, NULL));
 		checkCudaErrors(cuMemHostAlloc((void**)&lig.h_e, sizeof(float) * lws, 0));
 		checkCudaErrors(cuMemcpyDtoHAsync(lig.h_e, lig.d_s, sizeof(float) * lws, 0));
-		callback_data_wrapper<int> w(dev, idle, move(lig));
+		auto data = new callback_data<int>(dev, idle, io, move(lig));
 		checkCudaErrors(cuStreamAddCallback(0, []CUDA_CB (CUstream stream, CUresult error, void* data)
 		{
 			checkCudaErrors(error);
-			auto w = reinterpret_cast<callback_data_wrapper<int>*>(data);
-			printf("loop callback, dev = %d, lig = %s\n", w->e, w->lig.p.c_str());
-			w->v.safe_push_back(w->e);
-/*			auto io = (io_service_pooled*)data;
-			io->done();
-			ligand* lig = (ligand*)data;
-			checkCudaErrors(error);
-			lock_guard<mutex> guard(m);
-			idle.push_back(lig->dev);
-			completion.notify_one();
-			io.post([&]()
+			auto p = reinterpret_cast<callback_data<int>*>(data);
+			printf("callback, dev = %d, lig = %s\n", p->dev, p->lig.p.c_str());
+			p->io.post([=]()
 			{
-				lig->write();
-				safe_printf();
-				checkCudaErrors(cuCtxPushCurrent(contexts[lig->dev]));
-				checkCudaErrors(cuMemFree(lig->d_s));
-				checkCudaErrors(cuMemFreeHost(lig->h_e));
-				checkCudaErrors(cuMemFreeHost(lig->h_l));
-				checkCudaErrors(cuCtxPopCurrent(NULL));
-			});*/
-		}, &w, 0));
+//				p->lig->write();
+//				safe_printf();
+//				checkCudaErrors(cuCtxPushCurrent(contexts[p->dev]));
+//				checkCudaErrors(cuMemFree(lig->d_s));
+//				checkCudaErrors(cuMemFreeHost(lig->h_e));
+//				checkCudaErrors(cuMemFreeHost(lig->h_l));
+//				checkCudaErrors(cuCtxPopCurrent(NULL));
+				printf("io.post dev = %d\n", p->dev);
+				p->idle.safe_push_back(p->dev);
+				delete p;
+			});
+		}, data, 0));
 		checkCudaErrors(cuCtxPopCurrent(NULL));
 	}
-
-	// Wait until all results are written.
-//	io.sync();
 
 	// Cleanup.
 	for (auto& context : contexts)
