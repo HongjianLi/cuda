@@ -4,13 +4,13 @@ NVCC=nvcc
 all: multiDevice monte_carlo.cubin
 
 multiDevice: multiDevice.o io_service_pooled.o
-	$(CC) -o $@ $^ -lboost_system -lboost_filesystem -L${CUDA_ROOT}/lib64 -lcuda
+	$(CC) -o $@ $^ -L${BOOST_ROOT}/stage/lib -lboost_system -lboost_filesystem -L${CUDA_ROOT}/lib64 -lcuda
 
 multiDevice.o: multiDevice.cpp
-	$(CC) -o $@ $< -c -I${CUDA_ROOT}/include
+	$(CC) -o $@ $< -c -I${BOOST_ROOT} -I${CUDA_ROOT}/include
 
 io_service_pooled.o: io_service_pooled.cpp
-	$(CC) -o $@ $< -c
+	$(CC) -o $@ $< -c -I${BOOST_ROOT}
 
 monte_carlo.cubin: monte_carlo.cu
 	$(NVCC) -o $@ $< -arch=sm_11 -cubin
