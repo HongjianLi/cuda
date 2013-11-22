@@ -55,19 +55,6 @@ private:
 	condition_variable cv;
 };
 
-template <typename T>
-class callback_data
-{
-public:
-	callback_data(const T dev, safe_vector<T>& idle, io_service_pooled& io) : dev(dev), idle(idle), io(io)
-	{
-	}
-
-	T dev;
-	safe_vector<T>& idle;
-	io_service_pooled& io;
-};
-
 int main(int argc, char* argv[])
 {
 	// Initialize constants.
@@ -79,7 +66,7 @@ int main(int argc, char* argv[])
 	auto h_p = static_cast<float*>(malloc(sizeof(float) * 16));
 	for (int i = 0; i < 16; ++i)
 	{
-		h_p[i] = rand() / (float)RAND_MAX;
+		h_p[i] = rand() / static_cast<float>(RAND_MAX);
 	}
 
 	// Create a thread pool.
@@ -126,19 +113,19 @@ int main(int argc, char* argv[])
 	safe_vector<int> idle(num_devices);
 	iota(idle.begin(), idle.end(), 0);
 
-	// Initialize a default constructed directory_iterator acts as the end iterator.
+	// Loop over the ligands in the specified folder.
 	const directory_iterator const_dir_iter;
 	for (directory_iterator dir_iter("."); dir_iter != const_dir_iter; ++dir_iter)
 	{
 		// Parse the ligand.
-		ligand lig(dir_iter->path());
+		const ligand lig(dir_iter->path());
 
 		// Check for new atom types
-		if (false)
+		const size_t num_types = 4;
+		if (num_types)
 		{
-			const size_t n = 5;
-			io.init(n);
-			for (size_t i = 0; i < n; ++i)
+			io.init(num_types);
+			for (size_t i = 0; i < num_types; ++i)
 			{
 				io.post([&]()
 				{
@@ -146,26 +133,30 @@ int main(int argc, char* argv[])
 				});
 			}
 			io.sync();
+			const size_t numBytes = sizeof(float) * 1e+7;
 			for (auto& context : contexts)
 			{
 				checkCudaErrors(cuCtxPushCurrent(context));
-//				checkCudaErrors(cuMemAlloc(&d_e, sizeof(float) * 1e+7));
-//				checkCudaErrors(cuMemcpyHtoD(d_e, h_e, sizeof(float) * 1e+7));
+//				checkCudaErrors(cuMemAlloc(&d_e, numBytes));
+//				checkCudaErrors(cuMemcpyHtoD(d_e, h_e, numBytes));
 				checkCudaErrors(cuCtxPopCurrent(NULL));
 			}
 		}
 
-		io.post([&]()
+		// Wait until a device is ready for execution.
+		const int dev = idle.safe_pop_back();
+		printf("main, lig = %s, dev = %d\n", lig.p.c_str(), dev);
+
+		io.post(bind<void>([&,dev](const ligand lig)
 		{
-			// Wait until a device is ready for execution.
-			const int dev = idle.safe_pop_back();
+			printf("work, lig = %s, dev = %d\n", lig.p.c_str(), dev);
 
 			checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
 			float* h_l;
-			checkCudaErrors(cuMemHostAlloc((void**) &h_l, sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
+			checkCudaErrors(cuMemHostAlloc((void**)&h_l, sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
 			for (int i = 0; i < lws; ++i)
 			{
-				h_l[i] = rand() / (float) RAND_MAX;
+				h_l[i] = rand() / static_cast<float>(RAND_MAX);
 			}
 			CUdeviceptr d_l;
 			if (can_map_host_memory[dev])
@@ -180,9 +171,9 @@ int main(int argc, char* argv[])
 			CUdeviceptr d_s;
 			checkCudaErrors(cuMemAlloc(&d_s, sizeof(float) * gws));
 			checkCudaErrors(cuMemsetD32Async(d_s, 0, gws, NULL));
-			checkCudaErrors(cuLaunchKernel(functions[dev], 1, 1, 1, 1, 1, 1, 0, NULL, (void*[]){ &d_s, &d_l }, NULL));
+			checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, 0, NULL, (void*[]){ &d_s, &d_l }, NULL));
 			float* h_e;
-			checkCudaErrors(cuMemHostAlloc((void**) &h_e, sizeof(float) * lws, 0));
+			checkCudaErrors(cuMemHostAlloc((void**)&h_e, sizeof(float) * lws, 0));
 			checkCudaErrors(cuMemcpyDtoHAsync(h_e, d_s, sizeof(float) * lws, NULL));
 			checkCudaErrors(cuCtxSynchronize());
 			checkCudaErrors(cuMemFree(d_s));
@@ -206,10 +197,15 @@ int main(int argc, char* argv[])
 			checkCudaErrors(cuMemFreeHost(h_e));
 			checkCudaErrors(cuCtxPopCurrent(NULL));
 			idle.safe_push_back(dev);
-		});
+		}, move(lig)));
 	}
 
-	// Cleanup.
+	// Wait until the io service has finished all its tasks.
+	printf("io.destroy();\n");
+	io.destroy();
+
+	// Destroy contexts.
+	printf("cuCtxDestroy\n");
 	for (auto& context : contexts)
 	{
 		checkCudaErrors(cuCtxDestroy(context));

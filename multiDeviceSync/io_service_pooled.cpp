@@ -1,6 +1,6 @@
 #include "io_service_pooled.hpp"
 
-io_service_pooled::io_service_pooled(const int concurrency) : w(work(*this))
+io_service_pooled::io_service_pooled(const int concurrency) : w(new work(*this))
 {
 	for (int i = 0; i < concurrency; ++i)
 	{
@@ -27,4 +27,13 @@ void io_service_pooled::sync()
 {
 	unique_lock<mutex> lock(m);
 	cv.wait(lock);
+}
+
+void io_service_pooled::destroy()
+{
+	w.reset();
+	for (auto& f : futures)
+	{
+		f.get();
+	}
 }

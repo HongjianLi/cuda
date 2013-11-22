@@ -15,9 +15,10 @@ public:
 	void init(const int num_tasks);	
 	void done();
 	void sync();
+	void destroy();
 private:
 	vector<future<void>> futures;
-	work w;
+	unique_ptr<work> w;
 	mutex m;
 	condition_variable cv;
 	size_t num_tasks;
