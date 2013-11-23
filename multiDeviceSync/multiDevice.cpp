@@ -16,7 +16,7 @@ inline void spin(const clock_t num_clocks)
 class ligand
 {
 public:
-	ligand(const path p) : p(p)
+	explicit ligand(const path p) : p(p)
 	{
 		spin(1e+4); // Parse file.
 	}
@@ -32,6 +32,7 @@ public:
 	}
 
 	path p;
+	vector<int> atoms;
 };
 
 template <typename T>
@@ -153,7 +154,7 @@ int main(int argc, char* argv[])
 	for (directory_iterator dir_iter("."); dir_iter != const_dir_iter; ++dir_iter)
 	{
 		// Parse the ligand.
-		const ligand lig(dir_iter->path());
+		ligand lig(dir_iter->path());
 
 		// Check for new atom types
 		const size_t num_types = 4;
@@ -180,12 +181,9 @@ int main(int argc, char* argv[])
 
 		// Wait until a device is ready for execution.
 		const int dev = idle.safe_pop_back();
-		printf("main, lig = %s, dev = %d\n", lig.p.c_str(), dev);
 
-		io.post(bind<void>([&,dev](const ligand lig)
+		io.post(bind<void>([&,dev](const ligand& lig)
 		{
-			printf("work, lig = %s, dev = %d\n", lig.p.c_str(), dev);
-
 			checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
 			float* h_l;
 			checkCudaErrors(cuMemHostAlloc((void**)&h_l, sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
@@ -237,7 +235,6 @@ int main(int argc, char* argv[])
 	}
 
 	// Wait until the io service has finished all its tasks.
-	printf("io.destroy();\n");
 	w.reset();
 	for (auto& f : futures)
 	{
@@ -245,10 +242,8 @@ int main(int argc, char* argv[])
 	}
 
 	// Destroy contexts.
-	printf("cuCtxDestroy\n");
 	for (auto& context : contexts)
 	{
 		checkCudaErrors(cuCtxDestroy(context));
 	}
-	printf("exiting\n");
 }
