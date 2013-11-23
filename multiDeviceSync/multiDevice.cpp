@@ -1,11 +1,14 @@
+#include <vector>
+#include <future>
 #include <ctime>
+#include <boost/asio/io_service.hpp>
 #include <boost/filesystem/operations.hpp>
 #include "../cu_helper.h"
-#include "io_service_pooled.hpp"
 using namespace std;
+using namespace boost::asio;
 using namespace boost::filesystem;
 
-void spin(const clock_t num_clocks)
+inline void spin(const clock_t num_clocks)
 {
 	for (const clock_t threshold = clock() + num_clocks; clock() < threshold;);
 }
@@ -29,6 +32,28 @@ public:
 	}
 
 	path p;
+};
+
+template <typename T>
+class safe_counter
+{
+public:
+	safe_counter(const T n) : n(n), i(0) {}
+	void increment()
+	{
+		lock_guard<mutex> guard(m);
+		if (++i == n) cv.notify_one();
+	}
+	void wait()
+	{
+		unique_lock<mutex> lock(m);
+		cv.wait(lock);
+	}
+private:
+	mutex m;
+	condition_variable cv;
+	T n;
+	T i;
 };
 
 template <typename T>
@@ -60,6 +85,7 @@ int main(int argc, char* argv[])
 	// Initialize constants.
 	const unsigned int lws = 256;
 	const unsigned int gws = 32 * lws;
+	const unsigned int concurrency = 2;
 
 	// Initialize variables.
 	srand(time(0));
@@ -70,7 +96,16 @@ int main(int argc, char* argv[])
 	}
 
 	// Create a thread pool.
-	io_service_pooled io(2);
+	vector<future<void>> futures;
+	io_service io;
+	unique_ptr<io_service::work> w(new io_service::work(io));
+	for (int i = 0; i < concurrency; ++i)
+	{
+		futures.emplace_back(async(launch::async, [&]()
+		{
+			io.run();
+		}));
+	}
 
 	// Initialize the CUDA driver API.
 	checkCudaErrors(cuInit(0));
@@ -124,15 +159,15 @@ int main(int argc, char* argv[])
 		const size_t num_types = 4;
 		if (num_types)
 		{
-			io.init(num_types);
+			safe_counter<size_t> c(num_types);
 			for (size_t i = 0; i < num_types; ++i)
 			{
 				io.post([&]()
 				{
-					io.done();
+					c.increment();
 				});
 			}
-			io.sync();
+			c.wait();
 			const size_t numBytes = sizeof(float) * 1e+7;
 			for (auto& context : contexts)
 			{
@@ -202,7 +237,11 @@ int main(int argc, char* argv[])
 
 	// Wait until the io service has finished all its tasks.
 	printf("io.destroy();\n");
-	io.destroy();
+	w.reset();
+	for (auto& f : futures)
+	{
+		f.get();
+	}
 
 	// Destroy contexts.
 	printf("cuCtxDestroy\n");
