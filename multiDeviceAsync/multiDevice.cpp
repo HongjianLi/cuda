@@ -1,8 +1,11 @@
+#include <vector>
+#include <future>
 #include <ctime>
+#include <boost/asio/io_service.hpp>
 #include <boost/filesystem/operations.hpp>
 #include "../cu_helper.h"
-#include "io_service_pooled.hpp"
 using namespace std;
+using namespace boost::asio;
 using namespace boost::filesystem;
 
 void spin(const clock_t num_clocks)
@@ -37,6 +40,28 @@ public:
 };
 
 template <typename T>
+class safe_counter
+{
+public:
+	safe_counter(const T n) : n(n), i(0) {}
+	void increment()
+	{
+		lock_guard<mutex> guard(m);
+		if (++i == n) cv.notify_one();
+	}
+	void wait()
+	{
+		unique_lock<mutex> lock(m);
+		cv.wait(lock);
+	}
+private:
+	mutex m;
+	condition_variable cv;
+	T n;
+	T i;
+};
+
+template <typename T>
 class safe_vector : public vector<T>
 {
 public:
@@ -63,10 +88,10 @@ template <typename T>
 class callback_data
 {
 public:
-	callback_data(const T dev, safe_vector<T>& idle, io_service_pooled& io, ligand&& lig_) : dev(dev), idle(idle), io(io), lig(move(lig_)) {}
+	callback_data(const T dev, safe_vector<T>& idle, io_service& io, ligand&& lig_) : dev(dev), idle(idle), io(io), lig(move(lig_)) {}
 	const T dev;
 	safe_vector<T>& idle;
-	io_service_pooled& io;
+	io_service& io;
 	ligand lig;
 };
 
@@ -75,10 +100,27 @@ int main(int argc, char* argv[])
 	// Initialize constants.
 	const unsigned int lws = 256;
 	const unsigned int gws = 32 * lws;
+	const unsigned int concurrency = 2;
 
 	// Initialize variables.
 	srand(time(0));
-	io_service_pooled io(2);
+	auto h_p = static_cast<float*>(malloc(sizeof(float) * 16));
+	for (int i = 0; i < 16; ++i)
+	{
+		h_p[i] = rand() / static_cast<float>(RAND_MAX);
+	}
+
+	// Create a thread pool.
+	vector<future<void>> futures;
+	io_service io;
+	unique_ptr<io_service::work> w(new io_service::work(io));
+	for (int i = 0; i < concurrency; ++i)
+	{
+		futures.emplace_back(async(launch::async, [&]()
+		{
+			io.run();
+		}));
+	}
 
 	// Initialize the CUDA driver API.
 	checkCudaErrors(cuInit(0));
@@ -123,13 +165,7 @@ int main(int argc, char* argv[])
 		// Initialize symbols.
 		CUdeviceptr d_p;
 		checkCudaErrors(cuModuleGetGlobal(&d_p, NULL, module, "p"));
-		float* h_p;
-		checkCudaErrors(cuMemAllocHost((void**)&h_p, sizeof(float) * 16));
-		for (int i = 0; i < 16; ++i)
-		{
-			h_p[i] = rand() / (float)RAND_MAX;
-		}
-		checkCudaErrors(cuMemcpyHtoDAsync(d_p, h_p, sizeof(float) * 16, 0));
+		checkCudaErrors(cuMemcpyHtoD(d_p, h_p, sizeof(float) * 16));
 
 		// Enqueue a synchronization event to make sure the device is ready for execution.
 /*		auto data = new callback_data<int>(contexts.size(), idle, io);
@@ -166,27 +202,25 @@ int main(int argc, char* argv[])
 		int dev = idle.safe_pop_back();
 
 		// Check for new atom types
+		const size_t n = 5;
+		if (n)
 		{
 //			lock_guard<mutex> guard(m);
-			if (false)
+			safe_counter<size_t> c(n);
+			for (size_t i = 0; i < n; ++i)
 			{
-				const size_t n = 5;
-				io.init(n);
-				for (size_t i = 0; i < n; ++i)
+				io.post([&]()
 				{
-					io.post([&]()
-					{
-						io.done();
-					});
-				}
-				io.sync();
-				for (auto& context : contexts)
-				{
-					checkCudaErrors(cuCtxPushCurrent(context));
-//					checkCudaErrors(cuMemAlloc(&d_e, sizeof(float) * 1e+7));
-//					checkCudaErrors(cuMemcpyHtoD(d_e, h_e, sizeof(float) * 1e+7));
-					checkCudaErrors(cuCtxPopCurrent(NULL));
-				}
+					c.increment();
+				});
+			}
+			c.wait();
+			for (auto& context : contexts)
+			{
+				checkCudaErrors(cuCtxPushCurrent(context));
+//				checkCudaErrors(cuMemAlloc(&d_e, sizeof(float) * 1e+7));
+//				checkCudaErrors(cuMemcpyHtoD(d_e, h_e, sizeof(float) * 1e+7));
+				checkCudaErrors(cuCtxPopCurrent(NULL));
 			}
 		}
 
@@ -194,7 +228,7 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuMemHostAlloc((void**)&lig.h_l, sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
 		for (int i = 0; i < lws; ++i)
 		{
-			lig.h_l[i] = rand() / (float)RAND_MAX;
+			lig.h_l[i] = rand() / static_cast<float>(RAND_MAX);
 		}
 		checkCudaErrors(cuMemHostGetDevicePointer(&lig.d_l, lig.h_l, 0));
 		checkCudaErrors(cuMemAlloc(&lig.d_s, sizeof(float) * gws));
@@ -223,6 +257,13 @@ int main(int argc, char* argv[])
 			});
 		}, data, 0));
 		checkCudaErrors(cuCtxPopCurrent(NULL));
+	}
+
+	// Wait until the io_service has finished all its tasks.
+	w.reset();
+	for (auto& f : futures)
+	{
+		f.get();
 	}
 
 	// Cleanup.
