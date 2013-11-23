@@ -16,7 +16,7 @@ void spin(const clock_t num_clocks)
 class ligand
 {
 public:
-	ligand(const path p) : p(p)
+	explicit ligand(const path p) : p(p)
 	{
 		spin(1e+4); // Parse file.
 	}
