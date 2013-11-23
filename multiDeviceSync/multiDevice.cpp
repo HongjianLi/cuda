@@ -206,8 +206,8 @@ int main(int argc, char* argv[])
 			CUdeviceptr d_s;
 			checkCudaErrors(cuMemAlloc(&d_s, sizeof(float) * gws));
 			checkCudaErrors(cuMemsetD32Async(d_s, 0, gws, NULL));
-			void* args[] = { &d_s, &d_l };
-			checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, 0, NULL, args, NULL));
+			void* params[] = { &d_s, &d_l };
+			checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, 0, NULL, params, NULL));
 			float* h_e;
 			checkCudaErrors(cuMemHostAlloc((void**)&h_e, sizeof(float) * lws, 0));
 			checkCudaErrors(cuMemcpyDtoHAsync(h_e, d_s, sizeof(float) * lws, NULL));
