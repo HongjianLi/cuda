@@ -4,7 +4,7 @@ io_service_pool::io_service_pool(const unsigned concurrency) : w(unique_ptr<work
 {
 	for (int i = 0; i < concurrency; ++i)
 	{
-		futures.emplace_back(async(launch::async, [&]()
+		emplace_back(async(launch::async, [&]()
 		{
 			run();
 		}));
@@ -14,7 +14,7 @@ io_service_pool::io_service_pool(const unsigned concurrency) : w(unique_ptr<work
 void io_service_pool::wait()
 {
 	w.reset();
-	for (auto& f : futures)
+	for (auto& f : *this)
 	{
 		f.get();
 	}

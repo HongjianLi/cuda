@@ -8,13 +8,12 @@
 using namespace std;
 using namespace boost::asio;
 
-class io_service_pool : public io_service
+class io_service_pool : public io_service, public vector<future<void>>
 {
 public:
 	explicit io_service_pool(const unsigned concurrency);
 	void wait();
 private:
-	vector<future<void>> futures;
 	unique_ptr<work> w;
 };
 
