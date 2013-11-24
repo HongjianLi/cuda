@@ -1,3 +1,5 @@
+#include <iostream>
+#include <iomanip>
 #include <vector>
 #include <future>
 #include <ctime>
@@ -101,6 +103,8 @@ int main(int argc, char* argv[])
 	const unsigned int concurrency = 2;
 
 	// Initialize variables.
+	cout.setf(ios::fixed, ios::floatfield);
+	cout << setprecision(2);
 	srand(time(0));
 	auto h_p = static_cast<float*>(malloc(sizeof(float) * 16));
 	for (int i = 0; i < 16; ++i)
@@ -240,8 +244,14 @@ int main(int argc, char* argv[])
 			}
 			checkCudaErrors(cuMemFreeHost(h_l));
 			lig.write();
-			safe_print([]()
+			safe_print([&]()
 			{
+				cout << setw(1) << dev << setw(5) << 0 << setw(18) << lig.p.filename().string();
+				for (int i = 0; i < 9; ++i)
+				{
+					cout << setw(6) << h_e[i];
+				}
+				cout << endl;
 			});
 			checkCudaErrors(cuMemFreeHost(h_e));
 			checkCudaErrors(cuCtxPopCurrent(NULL));
