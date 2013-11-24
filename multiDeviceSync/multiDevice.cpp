@@ -33,7 +33,7 @@ public:
 	vector<int> atoms;
 };
 
-class safe_operation
+class safe_function
 {
 public:
 	void operator()(function<void(void)>&& f)
@@ -122,7 +122,7 @@ int main(int argc, char* argv[])
 	{
 		h_p[i] = rand() / static_cast<float>(RAND_MAX);
 	}
-	safe_operation safe_print;
+	safe_function safe_print;
 
 	// Create an io service for host.
 	io_service_pool ioh(num_threads);
