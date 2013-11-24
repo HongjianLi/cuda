@@ -1,13 +1,9 @@
 #include <iostream>
 #include <iomanip>
-#include <vector>
-#include <future>
 #include <ctime>
-#include <boost/asio/io_service.hpp>
 #include <boost/filesystem/operations.hpp>
 #include "../cu_helper.h"
-using namespace std;
-using namespace boost::asio;
+#include "io_service_pool.hpp"
 using namespace boost::filesystem;
 
 inline void spin(const clock_t num_clocks)
@@ -124,17 +120,8 @@ int main(int argc, char* argv[])
 	}
 	safe_operation safe_print;
 
-	// Create a thread pool.
-	vector<future<void>> futures;
-	io_service io;
-	unique_ptr<io_service::work> w(new io_service::work(io));
-	for (int i = 0; i < num_threads; ++i)
-	{
-		futures.emplace_back(async(launch::async, [&]()
-		{
-			io.run();
-		}));
-	}
+	// Create an io service for host.
+	io_service_pool ioh(num_threads);
 
 	// Initialize scoring function and random forest.
 
@@ -172,6 +159,9 @@ int main(int argc, char* argv[])
 	safe_vector<int> idle(num_devices);
 	iota(idle.begin(), idle.end(), 0);
 
+	// Create an io service for device.
+	io_service_pool iod(num_devices);
+
 	// Loop over the ligands in the specified folder.
 	const directory_iterator const_dir_iter;
 	for (directory_iterator dir_iter("."); dir_iter != const_dir_iter; ++dir_iter)
@@ -186,7 +176,7 @@ int main(int argc, char* argv[])
 			safe_counter<size_t> c(num_types);
 			for (size_t i = 0; i < num_types; ++i)
 			{
-				io.post([&]()
+				ioh.post([&]()
 				{
 					c.increment();
 				});
@@ -205,7 +195,7 @@ int main(int argc, char* argv[])
 		// Wait until a device is ready for execution.
 		const int dev = idle.safe_pop_back();
 
-		io.post(bind<void>([&,dev](const ligand& lig)
+		iod.post(bind<void>([&,dev](const ligand& lig)
 		{
 			checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
 			float* h_l;
@@ -252,7 +242,7 @@ int main(int argc, char* argv[])
 			lig.write();
 			safe_print([&]()
 			{
-				cout << setw(1) << dev << setw(5) << 0 << setw(18) << lig.p.filename().string();
+				cout << setw(1) << dev << setw(3) << 0 << setw(20) << lig.p.filename().string();
 				for (int i = 0; i < 9; ++i)
 				{
 					cout << setw(6) << h_e[i];
@@ -265,12 +255,11 @@ int main(int argc, char* argv[])
 		}, move(lig)));
 	}
 
-	// Wait until the io service has finished all its tasks.
-	w.reset();
-	for (auto& f : futures)
-	{
-		f.get();
-	}
+	// Wait until the io service for host has finished all its tasks.
+	ioh.wait();
+
+	// Wait until the io service for device has finished all its tasks.
+	iod.wait();
 
 	// Destroy contexts.
 	for (auto& context : contexts)
