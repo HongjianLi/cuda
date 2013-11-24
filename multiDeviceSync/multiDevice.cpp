@@ -35,6 +35,18 @@ public:
 	vector<int> atoms;
 };
 
+class safe_operation
+{
+public:
+	void operator()(function<void(void)>&& f)
+	{
+		lock_guard<mutex> guard(m);
+		f();
+	}
+private:
+	mutex m;
+};
+
 template <typename T>
 class safe_counter
 {
@@ -95,6 +107,7 @@ int main(int argc, char* argv[])
 	{
 		h_p[i] = rand() / static_cast<float>(RAND_MAX);
 	}
+	safe_operation safe_print;
 
 	// Create a thread pool.
 	vector<future<void>> futures;
@@ -226,8 +239,10 @@ int main(int argc, char* argv[])
 				}
 			}
 			checkCudaErrors(cuMemFreeHost(h_l));
-			//		lig->write();
-			//		safe_printf();
+			lig.write();
+			safe_print([]()
+			{
+			});
 			checkCudaErrors(cuMemFreeHost(h_e));
 			checkCudaErrors(cuCtxPopCurrent(NULL));
 			idle.safe_push_back(dev);
