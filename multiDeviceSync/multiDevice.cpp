@@ -100,7 +100,18 @@ int main(int argc, char* argv[])
 	// Initialize constants.
 	const unsigned int lws = 256;
 	const unsigned int gws = 32 * lws;
-	const unsigned int concurrency = 2;
+	const unsigned int num_threads = 2;
+
+	// Get the number of devices with compute capability 1.0 or greater that are available for execution.
+	cout << "Detecting CUDA devices" << endl;
+	checkCudaErrors(cuInit(0));
+	int num_devices;
+	checkCudaErrors(cuDeviceGetCount(&num_devices));
+	if (!num_devices)
+	{
+		cerr << "No CUDA devices detected" << endl;
+		return 2;
+	}
 
 	// Initialize variables.
 	cout.setf(ios::fixed, ios::floatfield);
@@ -117,7 +128,7 @@ int main(int argc, char* argv[])
 	vector<future<void>> futures;
 	io_service io;
 	unique_ptr<io_service::work> w(new io_service::work(io));
-	for (int i = 0; i < concurrency; ++i)
+	for (int i = 0; i < num_threads; ++i)
 	{
 		futures.emplace_back(async(launch::async, [&]()
 		{
@@ -125,12 +136,7 @@ int main(int argc, char* argv[])
 		}));
 	}
 
-	// Initialize the CUDA driver API.
-	checkCudaErrors(cuInit(0));
-
-	// Get the number of devices with compute capability 1.0 or greater that are available for execution.
-	int num_devices;
-	checkCudaErrors(cuDeviceGetCount(&num_devices));
+	// Initialize scoring function and random forest.
 
 	// Initialize containers of contexts and functions.
 	vector<CUcontext> contexts(num_devices);
