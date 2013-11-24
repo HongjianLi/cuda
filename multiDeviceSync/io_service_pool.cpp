@@ -2,6 +2,7 @@
 
 io_service_pool::io_service_pool(const unsigned concurrency) : w(unique_ptr<work>(new work(*this)))
 {
+	reserve(concurrency);
 	for (int i = 0; i < concurrency; ++i)
 	{
 		emplace_back(async(launch::async, [&]()

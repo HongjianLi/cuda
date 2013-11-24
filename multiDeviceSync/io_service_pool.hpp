@@ -2,7 +2,6 @@
 #ifndef IO_SERVICE_POOL_HPP
 #define IO_SERVICE_POOL_HPP
 
-//#include <vector>
 #include <future>
 #include <boost/asio/io_service.hpp>
 using namespace std;
