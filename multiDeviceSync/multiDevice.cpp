@@ -49,7 +49,11 @@ template <typename T>
 class safe_counter
 {
 public:
-	safe_counter(const T n) : n(n), i(0) {}
+	void init(const T z)
+	{
+		n = z;
+		i = 0;
+	}
 	void increment()
 	{
 		lock_guard<mutex> guard(m);
@@ -143,7 +147,7 @@ int main(int argc, char* argv[])
 		// Create context, module and function.
 		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | CU_CTX_MAP_HOST, device));
 		CUmodule module;
-		checkCudaErrors(cuModuleLoad(&module, "monte_carlo.cubin")); // nvcc -cubin -arch=sm_11 -G, and use cuda-gdb
+		checkCudaErrors(cuModuleLoad(&module, "monte_carlo.fatbin")); // nvcc -cubin -arch=sm_11 -G, and use cuda-gdb
 		checkCudaErrors(cuModuleGetFunction(&functions[dev], module, "monte_carlo"));
 
 		// Initialize symbols.
@@ -173,15 +177,16 @@ int main(int argc, char* argv[])
 		const size_t num_types = 4;
 		if (num_types)
 		{
-			safe_counter<size_t> c(num_types);
+			safe_counter<size_t> cnt;
+			cnt.init(num_types);
 			for (size_t i = 0; i < num_types; ++i)
 			{
 				ioh.post([&]()
 				{
-					c.increment();
+					cnt.increment();
 				});
 			}
-			c.wait();
+			cnt.wait();
 			const size_t numBytes = sizeof(float) * 1e+7;
 			for (auto& context : contexts)
 			{
