@@ -24,7 +24,7 @@ public:
 		spin(1e+3); // Write data.
 	}
 
-	void write() const
+	void write(const float* ex) const
 	{
 		spin(1e+5);
 	}
@@ -122,12 +122,10 @@ int main(int argc, char* argv[])
 	{
 		h_p[i] = rand() / static_cast<float>(RAND_MAX);
 	}
-	safe_function safe_print;
 
 	// Create an io service for host.
 	io_service_pool ioh(num_threads);
-
-	// Initialize scoring function and random forest.
+	safe_counter<size_t> cnt;
 
 	// Initialize containers of contexts and functions.
 	vector<CUcontext> contexts(num_devices);
@@ -165,6 +163,7 @@ int main(int argc, char* argv[])
 
 	// Create an io service for device.
 	io_service_pool iod(num_devices);
+	safe_function safe_print;
 
 	// Loop over the ligands in the specified folder.
 	const directory_iterator const_dir_iter;
@@ -177,7 +176,6 @@ int main(int argc, char* argv[])
 		const size_t num_types = 4;
 		if (num_types)
 		{
-			safe_counter<size_t> cnt;
 			cnt.init(num_types);
 			for (size_t i = 0; i < num_types; ++i)
 			{
@@ -244,7 +242,7 @@ int main(int argc, char* argv[])
 				}
 			}
 			checkCudaErrors(cuMemFreeHost(h_l));
-			lig.write();
+			lig.write(h_e);
 			safe_print([&]()
 			{
 				cout << setw(1) << dev << setw(3) << 0 << setw(20) << lig.p.filename().string();
