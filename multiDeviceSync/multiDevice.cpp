@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
 	// Initialize constants.
 	const unsigned int lws = 256;
 	const unsigned int gws = 32 * lws;
-	const unsigned int num_threads = 2;
+	const unsigned int num_threads = thread::hardware_concurrency();
 
 	// Get the number of devices with compute capability 1.0 or greater that are available for execution.
 	cout << "Detecting CUDA devices" << endl;
@@ -114,8 +114,6 @@ int main(int argc, char* argv[])
 	}
 
 	// Initialize variables.
-	cout.setf(ios::fixed, ios::floatfield);
-	cout << setprecision(2);
 	srand(time(0));
 	auto h_p = static_cast<float*>(malloc(sizeof(float) * 16));
 	for (int i = 0; i < 16; ++i)
@@ -130,6 +128,7 @@ int main(int argc, char* argv[])
 	// Initialize containers of contexts and functions.
 	vector<CUcontext> contexts(num_devices);
 	vector<CUfunction> functions(num_devices);
+	vector<CUstream> streams(num_devices);
 	vector<int> can_map_host_memory(num_devices);
 
 	// Populate containers of contexts and functions.
@@ -144,6 +143,9 @@ int main(int argc, char* argv[])
 
 		// Create context, module and function.
 		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | CU_CTX_MAP_HOST, device));
+
+		checkCudaErrors(cuStreamCreate(&streams[dev], CU_STREAM_NON_BLOCKING));
+
 		CUmodule module;
 		checkCudaErrors(cuModuleLoad(&module, "monte_carlo.fatbin")); // nvcc -cubin -arch=sm_11 -G, and use cuda-gdb
 		checkCudaErrors(cuModuleGetFunction(&functions[dev], module, "monte_carlo"));
@@ -166,8 +168,9 @@ int main(int argc, char* argv[])
 	safe_function safe_print;
 
 	// Loop over the ligands in the specified folder.
-	const directory_iterator const_dir_iter;
-	for (directory_iterator dir_iter("."); dir_iter != const_dir_iter; ++dir_iter)
+	cout.setf(ios::fixed, ios::floatfield);
+	cout << setprecision(2);
+	for (directory_iterator dir_iter("."), const_dir_iter; dir_iter != const_dir_iter; ++dir_iter)
 	{
 		// Parse the ligand.
 		ligand lig(dir_iter->path());
@@ -185,12 +188,17 @@ int main(int argc, char* argv[])
 				});
 			}
 			cnt.wait();
-			const size_t numBytes = sizeof(float) * 1e+7;
+
+			const size_t numBytes = sizeof(float) * 1e+5;
 			for (auto& context : contexts)
 			{
 				checkCudaErrors(cuCtxPushCurrent(context));
-//				checkCudaErrors(cuMemAlloc(&d_e, numBytes));
-//				checkCudaErrors(cuMemcpyHtoD(d_e, h_e, numBytes));
+				float* h_e;
+				checkCudaErrors(cuMemHostAlloc((void**)&h_e, numBytes, 0));
+				CUdeviceptr d_e;
+				checkCudaErrors(cuMemAlloc(&d_e, numBytes));
+				checkCudaErrors(cuMemcpyHtoD(d_e, h_e, numBytes));
+				checkCudaErrors(cuMemFreeHost(h_e));
 				checkCudaErrors(cuCtxPopCurrent(NULL));
 			}
 		}
@@ -198,7 +206,7 @@ int main(int argc, char* argv[])
 		// Wait until a device is ready for execution.
 		const int dev = idle.safe_pop_back();
 
-		iod.post(bind<void>([&,dev](const ligand& lig)
+		iod.post(bind<void>([&,dev](ligand& lig)
 		{
 			checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
 			float* h_l;
