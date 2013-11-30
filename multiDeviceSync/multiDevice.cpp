@@ -47,7 +47,7 @@ public:
 class ligand
 {
 public:
-	explicit ligand(const path& p) : filename(p.filename()), atoms(rand() % 100)
+	explicit ligand(const path& p) : filename(p.filename()), atoms(rand() % 10)
 	{
 		spin(1e+4);
 	}
@@ -170,7 +170,7 @@ int main(int argc, char* argv[])
 	vector<CUcontext> contexts(num_devices);
 	vector<CUstream> streams(num_devices);
 	vector<CUfunction> functions(num_devices);
-	vector<vector<size_t>> xsth(num_devices);
+	vector<vector<size_t>> xst(num_devices);
 	vector<float*> ligh(num_devices);
 	vector<CUdeviceptr> ligd(num_devices);
 	vector<CUdeviceptr> slnd(num_devices);
@@ -204,8 +204,8 @@ int main(int argc, char* argv[])
 		assert(prms == sizeof(float) * 16);
 		checkCudaErrors(cuMemcpyHtoD(prmd, prmh.data(), prms));
 
-		// Reserve space for xsth.
-		xsth[dev].reserve(scoring_function::n);
+		// Reserve space for xst.
+		xst[dev].reserve(scoring_function::n);
 
 		// Allocate ligh, ligd, slnd and cnfh.
 		checkCudaErrors(cuMemHostAlloc((void**)&ligh[dev], sizeof(float) * lws, can_map_host_memory[dev] ? CU_MEMHOSTALLOC_DEVICEMAP : 0));
@@ -247,10 +247,10 @@ int main(int argc, char* argv[])
 		for (const atom& a : lig.atoms)
 		{
 			const size_t t = a.xs;
-			if (rec.maps[t].empty() && find(xs.cbegin(), xs.cend(), t) == xs.cend())
+			if (rec.maps[t].empty())
 			{
-				xs.push_back(t);
 				rec.maps[t].resize(rec.num_probes_product);
+				xs.push_back(t);
 			}
 		}
 
@@ -268,20 +268,6 @@ int main(int argc, char* argv[])
 				});
 			}
 			cnt.wait();
-
-			// Copy grid maps from host memory to device memory.
-			for (int dev = 0; dev < num_devices; ++dev)
-			{
-				checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
-				const size_t map_bytes = sizeof(float) * rec.num_probes_product;
-				for (const auto t : xs)
-				{
-					CUdeviceptr mapd;
-					checkCudaErrors(cuMemAlloc(&mapd, map_bytes));
-					checkCudaErrors(cuMemcpyHtoD(mapd, rec.maps[t].data(), map_bytes));
-				}
-				checkCudaErrors(cuCtxPopCurrent(NULL));
-			}
 		}
 
 		// Wait until a device is ready for execution.
@@ -291,6 +277,30 @@ int main(int argc, char* argv[])
 		{
 			// Push the context of the chosen device.
 			checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
+
+			// Find atom types that are presented in the current ligand but are not yet copied to device memory.
+			vector<size_t> xs;
+			for (const atom& a : lig.atoms)
+			{
+				const size_t t = a.xs;
+				if (find(xst[dev].cbegin(), xst[dev].cend(), t) == xst[dev].cend())
+				{
+					xst[dev].push_back(t);
+					xs.push_back(t);
+				}
+			}
+
+			// Copy grid maps from host memory to device memory if necessary.
+			if (xs.size())
+			{
+				const size_t map_bytes = sizeof(float) * rec.num_probes_product;
+				for (const auto t : xs)
+				{
+					CUdeviceptr mapd;
+					checkCudaErrors(cuMemAlloc(&mapd, map_bytes));
+					checkCudaErrors(cuMemcpyHtoD(mapd, rec.maps[t].data(), map_bytes));
+				}
+			}
 
 			// Encode the current ligand.
 			lig.encode(ligh[dev], lws);
