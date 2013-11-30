@@ -99,13 +99,21 @@ private:
 	condition_variable cv;
 };
 
+
 template <typename T>
-class callback_data
+class callback_data_base
 {
 public:
-	callback_data(const T dev, safe_vector<T>& idle, io_service_pool& io, ligand&& lig_) : dev(dev), idle(idle), io(io), lig(move(lig_)) {}
+	callback_data_base(const T dev, safe_vector<T>& idle) : dev(dev), idle(idle) {}
 	const T dev;
 	safe_vector<T>& idle;
+};
+
+template <typename T>
+class callback_data : public callback_data_base<T>
+{
+public:
+	callback_data(const T dev, safe_vector<T>& idle, io_service_pool& io, ligand&& lig_) : callback_data_base<T>(dev, idle), io(io), lig(move(lig_)) {}
 	io_service_pool& io;
 	ligand lig;
 };
@@ -206,9 +214,9 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuStreamAddCallback(NULL, []CUDA_CB (CUstream stream, CUresult error, void* data)
 		{
 			checkCudaErrors(error);
-			const auto cbd = unique_ptr<callback_data<int>>(reinterpret_cast<callback_data<int>*>(data));
+			const auto cbd = unique_ptr<callback_data_base<int>>(reinterpret_cast<callback_data_base<int>*>(data));
 			cbd->idle.safe_push_back(cbd->dev);
-		}, new callback_data<int>(contexts.size(), idle, ioh, ligand("")), 0));
+		}, new callback_data_base<int>(contexts.size(), idle), 0));
 
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
