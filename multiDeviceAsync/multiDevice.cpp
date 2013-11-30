@@ -196,15 +196,19 @@ int main(int argc, char* argv[])
 		assert(prms == sizeof(float) * 16);
 		checkCudaErrors(cuMemcpyHtoD(prmd, prmh, prms));
 
+		// Allocate ligh, ligd, slnd and cnfh.
+		checkCudaErrors(cuMemHostAlloc((void**)&ligh[dev], sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
+		checkCudaErrors(cuMemHostGetDevicePointer(&ligd[dev], ligh[dev], 0));
+		checkCudaErrors(cuMemAlloc(&slnd[dev], sizeof(float) * gws));
+		checkCudaErrors(cuMemHostAlloc((void**)&cnfh[dev], sizeof(float) * lws, 0));
+
 		// Enqueue a synchronization event to make sure the device is ready for execution.
-		auto data = new callback_data<int>(contexts.size(), idle, ioh, ligand(""));
 		checkCudaErrors(cuStreamAddCallback(NULL, []CUDA_CB (CUstream stream, CUresult error, void* data)
 		{
 			checkCudaErrors(error);
-			auto p = reinterpret_cast<callback_data<int>*>(data);
-			p->idle.safe_push_back(p->dev);
-			delete p;
-		}, data, 0));
+			const auto cbd = unique_ptr<callback_data<int>>(reinterpret_cast<callback_data<int>*>(data));
+			cbd->idle.safe_push_back(cbd->dev);
+		}, new callback_data<int>(contexts.size(), idle, ioh, ligand("")), 0));
 
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
@@ -238,68 +242,84 @@ int main(int argc, char* argv[])
 			}
 			cnt.wait();
 
-			const size_t numBytes = sizeof(float) * 1e+5;
+			const size_t map_bytes = sizeof(float) * 1e+5;
 			for (auto& context : contexts)
 			{
 				checkCudaErrors(cuCtxPushCurrent(context));
-				float* h_e;
-				checkCudaErrors(cuMemHostAlloc((void**)&h_e, numBytes, 0));
-				CUdeviceptr d_e;
-				checkCudaErrors(cuMemAlloc(&d_e, numBytes));
-				checkCudaErrors(cuMemcpyHtoD(d_e, h_e, numBytes));
-				checkCudaErrors(cuMemFreeHost(h_e));
+				float* maph;
+				checkCudaErrors(cuMemHostAlloc((void**)&maph, map_bytes, 0));
+				CUdeviceptr mapd;
+				checkCudaErrors(cuMemAlloc(&mapd, map_bytes));
+				checkCudaErrors(cuMemcpyHtoD(mapd, maph, map_bytes));
+				checkCudaErrors(cuMemFreeHost(maph));
 				checkCudaErrors(cuCtxPopCurrent(NULL));
 			}
 		}
 
-/*		// Wait until a device is ready for execution.
+		// Wait until a device is ready for execution.
 		const int dev = idle.safe_pop_back();
 
+		// Push the context of the chosen device.
 		checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
-		float* h_l;
-		checkCudaErrors(cuMemHostAlloc((void**)&h_l, sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
-		for (int i = 0; i < lws; ++i)
-		{
-			h_l[i] = rand() / static_cast<float>(RAND_MAX);
-		}
-		CUdeviceptr d_l;
-		checkCudaErrors(cuMemHostGetDevicePointer(&d_l, h_l, 0));
-		CUdeviceptr d_s;
-		checkCudaErrors(cuMemAlloc(&d_s, sizeof(float) * gws));
-		checkCudaErrors(cuMemsetD32Async(d_s, 0, gws, NULL));
-		void* params[] = { &d_s, &d_l };
-		checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, 0, NULL, params, NULL));
-		float* h_e;
-		checkCudaErrors(cuMemHostAlloc((void**)&h_e, sizeof(float) * lws, 0));
-		checkCudaErrors(cuMemcpyDtoHAsync(h_e, d_s, sizeof(float) * lws, NULL));
-		checkCudaErrors(cuCtxSynchronize());
-		checkCudaErrors(cuMemFree(d_s));
-		for (int i = 0; i < lws; ++i)
-		{
-			const float actual = h_e[i];
-			const float expected = h_l[i] * 2.0f + 1.0f + prmh[i % 16];
-			if (fabs(actual - expected) > 1e-7)
-			{
-				printf("h_e[%d] = %f, expected = %f\n", i, actual, expected);
-				break;
-			}
-		}
-		checkCudaErrors(cuMemFreeHost(h_l));
-		lig.write(h_e);
-		safe_print([&]()
-		{
-			cout << setw(2) << ++num_ligands << setw(20) << lig.filename.string() << setw(2) << dev << ' ';
-			for (int i = 0; i < 9; ++i)
-			{
-				cout << setw(6) << h_e[i];
-			}
-			cout << endl;
-		});
-		checkCudaErrors(cuMemFreeHost(h_e));
-		checkCudaErrors(cuCtxPopCurrent(NULL));
-		idle.safe_push_back(dev);
 
-		checkCudaErrors(cuCtxPopCurrent(NULL));*/
+		// Encode the current ligand.
+		lig.encode(ligh[dev], lws);
+
+		const size_t lig_bytes = sizeof(float) * lws;
+
+		// Clear the solution buffer.
+		checkCudaErrors(cuMemsetD32Async(slnd[dev], 0, gws, streams[dev]));
+
+		// Launch kernel.
+		void* params[] = { &slnd[dev], &ligd[dev] };
+		checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, lig_bytes, streams[dev], params, NULL));
+
+		// Copy conformations from device memory to host memory.
+		checkCudaErrors(cuMemcpyDtoHAsync(cnfh[dev], slnd[dev], sizeof(float) * lws, streams[dev]));
+
+		// Add callback.
+		checkCudaErrors(cuStreamAddCallback(streams[dev], []CUDA_CB (CUstream stream, CUresult error, void* data)
+		{
+			checkCudaErrors(error);
+			const auto cbdp = reinterpret_cast<callback_data<int>*>(data);
+
+			cbdp->io.post([cbdp]()
+			{
+				const auto cbd = unique_ptr<callback_data<int>>(cbdp);
+
+/*				// Validate results.
+				for (int i = 0; i < lws; ++i)
+				{
+					const float actual = cnfh[i];
+					const float expected = ligh[i] * 2.0f + 1.0f + prmh[i % 16];
+					if (fabs(actual - expected) > 1e-7)
+					{
+						printf("cnfh[%d] = %f, expected = %f\n", i, actual, expected);
+						break;
+					}
+				}
+
+				// Write conformations.
+				lig.write(cnfh);
+
+				// Output and save ligand stem and predicted affinities.
+				safe_print([&]()
+				{
+					cout << setw(2) << ++num_ligands << setw(20) << lig.filename.string() << setw(2) << dev << ' ';
+					for (int i = 0; i < 9; ++i)
+					{
+						cout << setw(6) << h_e[i];
+					}
+					cout << endl;
+				});*/
+
+				// Signal the main thread to post another task.
+				cbd->idle.safe_push_back(cbd->dev);
+			});
+		}, new callback_data<int>(dev, idle, ioh, move(lig)), 0));
+
+		// Pop the context after use.
+		checkCudaErrors(cuCtxPopCurrent(NULL));
 	}
 
 	// Wait until the io service for host has finished all its tasks.
