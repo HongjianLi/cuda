@@ -6,7 +6,7 @@
 #include "io_service_pool.hpp"
 using namespace boost::filesystem;
 
-inline void spin(const clock_t num_clocks)
+void spin(const clock_t num_clocks)
 {
 	for (const clock_t threshold = clock() + num_clocks; clock() < threshold;);
 }
@@ -14,22 +14,26 @@ inline void spin(const clock_t num_clocks)
 class ligand
 {
 public:
-	explicit ligand(const path p) : p(p)
+	explicit ligand(const path p) : filename(p.filename())
 	{
-		spin(1e+4); // Parse file.
+		spin(1e+4);
 	}
 
-	void populate(int* h_l)
+	void encode(float* h_l, const unsigned int lws)
 	{
-		spin(1e+3); // Write data.
+		for (int i = 0; i < lws; ++i)
+		{
+			h_l[i] = rand() / static_cast<float>(RAND_MAX);
+		}
+		spin(1e+3);
 	}
 
-	void write(const float* ex) const
+	void write(const float* h_e) const
 	{
 		spin(1e+5);
 	}
 
-	path p;
+	path filename;
 	vector<int> atoms;
 };
 
@@ -62,7 +66,7 @@ public:
 	void wait()
 	{
 		unique_lock<mutex> lock(m);
-		cv.wait(lock);
+		if (i < n) cv.wait(lock);
 	}
 private:
 	mutex m;
@@ -121,11 +125,11 @@ int main(int argc, char* argv[])
 		h_p[i] = rand() / static_cast<float>(RAND_MAX);
 	}
 
-	// Create an io service for host.
+	// Create an io service pool for host.
 	io_service_pool ioh(num_threads);
 	safe_counter<size_t> cnt;
 
-	// Initialize containers of contexts and functions.
+	// Initialize containers of contexts, streams and functions.
 	vector<CUcontext> contexts(num_devices);
 	vector<CUfunction> functions(num_devices);
 	vector<CUstream> streams(num_devices);
@@ -168,8 +172,9 @@ int main(int argc, char* argv[])
 	safe_function safe_print;
 
 	// Loop over the ligands in the specified folder.
+	size_t num_ligands = 0;
 	cout.setf(ios::fixed, ios::floatfield);
-	cout << setprecision(2);
+	cout << "ID              Ligand D  pKd 1     2     3     4     5     6     7     8     9" << endl << setprecision(2);
 	for (directory_iterator dir_iter("."), const_dir_iter; dir_iter != const_dir_iter; ++dir_iter)
 	{
 		// Parse the ligand.
@@ -211,10 +216,7 @@ int main(int argc, char* argv[])
 			checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
 			float* h_l;
 			checkCudaErrors(cuMemHostAlloc((void**)&h_l, sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
-			for (int i = 0; i < lws; ++i)
-			{
-				h_l[i] = rand() / static_cast<float>(RAND_MAX);
-			}
+			lig.encode(h_l, lws);
 			CUdeviceptr d_l;
 			if (can_map_host_memory[dev])
 			{
@@ -253,7 +255,7 @@ int main(int argc, char* argv[])
 			lig.write(h_e);
 			safe_print([&]()
 			{
-				cout << setw(1) << dev << setw(3) << 0 << setw(20) << lig.p.filename().string();
+				cout << setw(2) << ++num_ligands << setw(20) << lig.filename.string() << setw(2) << dev << ' ';
 				for (int i = 0; i < 9; ++i)
 				{
 					cout << setw(6) << h_e[i];
@@ -277,4 +279,6 @@ int main(int argc, char* argv[])
 	{
 		checkCudaErrors(cuCtxDestroy(context));
 	}
+
+	cout << "Writing log records of " << num_ligands << " ligands to the log file" << endl;
 }
