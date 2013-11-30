@@ -209,7 +209,7 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuMemcpyHtoD(prmd, prmh.data(), prms));
 
 		// Reserve space for xst.
-		xst[dev].reserve(scoring_function::n);
+		xst[dev].reserve(sf.n);
 
 		// Allocate ligh, ligd, slnd and cnfh.
 		checkCudaErrors(cuMemHostAlloc((void**)&ligh[dev], sizeof(float) * lws, can_map_host_memory[dev] ? CU_MEMHOSTALLOC_DEVICEMAP : 0));
