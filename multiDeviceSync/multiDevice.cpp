@@ -164,15 +164,15 @@ int main(int argc, char* argv[])
 		cerr << "No CUDA devices detected" << endl;
 		return 2;
 	}
+	vector<CUdevice> devices(num_devices);
 	vector<int> can_map_host_memory(num_devices);
 	for (int dev = 0; dev < num_devices; ++dev)
 	{
 		// Get a device handle from an ordinal.
-		CUdevice device;
-		checkCudaErrors(cuDeviceGet(&device, dev));
+		checkCudaErrors(cuDeviceGet(&devices[dev], dev));
 
 		// Check if the device can map host memory into CUDA address space.
-		checkCudaErrors(cuDeviceGetAttribute(&can_map_host_memory[dev], CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY, device));
+		checkCudaErrors(cuDeviceGetAttribute(&can_map_host_memory[dev], CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY, devices[dev]));
 	}
 
 	cout << "Compiling modules for " << num_devices << " devices" << endl;
@@ -188,12 +188,8 @@ int main(int argc, char* argv[])
 	vector<float*> cnfh(num_devices);
 	for (int dev = 0; dev < num_devices; ++dev)
 	{
-		// Get a device handle from an ordinal.
-		CUdevice device;
-		checkCudaErrors(cuDeviceGet(&device, dev));
-
 		// Create context.
-		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | (can_map_host_memory[dev] ? CU_CTX_MAP_HOST : 0), device));
+		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | (can_map_host_memory[dev] ? CU_CTX_MAP_HOST : 0), devices[dev]));
 
 		// Create stream.
 		checkCudaErrors(cuStreamCreate(&streams[dev], CU_STREAM_NON_BLOCKING));
