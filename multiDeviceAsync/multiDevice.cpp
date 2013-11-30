@@ -318,12 +318,9 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuStreamAddCallback(streams[dev], []CUDA_CB (CUstream stream, CUresult error, void* data)
 		{
 			checkCudaErrors(error);
-			const auto cbdp = reinterpret_cast<callback_data<int>*>(data);
-
-			cbdp->io.post([=]()
+			const shared_ptr<callback_data<int>> cbd(reinterpret_cast<callback_data<int>*>(data));
+			cbd->io.post([=]()
 			{
-				// Wrapped the callback data pointer.
-				const auto cbd = unique_ptr<callback_data<int>>(cbdp);
 				const auto dev = cbd->dev;
 				const auto& cnfh = cbd->cnfh;
 				const auto& ligh = cbd->ligh;
