@@ -119,10 +119,10 @@ int main(int argc, char* argv[])
 
 	// Initialize variables.
 	srand(time(0));
-	auto prmh = static_cast<float*>(malloc(sizeof(float) * 16));
-	for (int i = 0; i < 16; ++i)
+	vector<float> prmh(16);
+	for (auto& prm : prmh)
 	{
-		prmh[i] = rand() / static_cast<float>(RAND_MAX);
+		prm = rand() / static_cast<float>(RAND_MAX);
 	}
 
 	// Create an io service pool for host.
@@ -165,7 +165,7 @@ int main(int argc, char* argv[])
 		size_t prms;
 		checkCudaErrors(cuModuleGetGlobal(&prmd, &prms, module, "p"));
 		assert(prms == sizeof(float) * 16);
-		checkCudaErrors(cuMemcpyHtoD(prmd, prmh, prms));
+		checkCudaErrors(cuMemcpyHtoD(prmd, prmh.data(), prms));
 
 		// Allocate ligh, ligd, slnd and cnfh.
 		checkCudaErrors(cuMemHostAlloc((void**)&ligh[dev], sizeof(float) * lws, can_map_host_memory[dev] ? CU_MEMHOSTALLOC_DEVICEMAP : 0));
