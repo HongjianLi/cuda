@@ -14,12 +14,12 @@ void spin(const clock_t num_clocks)
 class ligand
 {
 public:
-	explicit ligand(const path p) : filename(p.filename())
+	explicit ligand(const path& p) : filename(p.filename())
 	{
 		spin(1e+4);
 	}
 
-	void encode(float* h_l, const unsigned int lws)
+	void encode(float* const h_l, const unsigned int lws)
 	{
 		for (int i = 0; i < lws; ++i)
 		{
@@ -28,7 +28,7 @@ public:
 		spin(1e+3);
 	}
 
-	void write(const float* h_e) const
+	void write(const float* const h_e) const
 	{
 		spin(1e+5);
 	}
@@ -119,10 +119,10 @@ int main(int argc, char* argv[])
 
 	// Initialize variables.
 	srand(time(0));
-	auto h_p = static_cast<float*>(malloc(sizeof(float) * 16));
+	auto prmh = static_cast<float*>(malloc(sizeof(float) * 16));
 	for (int i = 0; i < 16; ++i)
 	{
-		h_p[i] = rand() / static_cast<float>(RAND_MAX);
+		prmh[i] = rand() / static_cast<float>(RAND_MAX);
 	}
 
 	// Create an io service pool for host.
@@ -130,12 +130,14 @@ int main(int argc, char* argv[])
 	safe_counter<size_t> cnt;
 
 	// Initialize containers of contexts, streams and functions.
-	vector<CUcontext> contexts(num_devices);
-	vector<CUfunction> functions(num_devices);
-	vector<CUstream> streams(num_devices);
 	vector<int> can_map_host_memory(num_devices);
-
-	// Populate containers of contexts and functions.
+	vector<CUcontext> contexts(num_devices);
+	vector<CUstream> streams(num_devices);
+	vector<CUfunction> functions(num_devices);
+	vector<float*> ligh(num_devices);
+	vector<CUdeviceptr> ligd(num_devices);
+	vector<CUdeviceptr> slnd(num_devices);
+	vector<float*> cnfh(num_devices);
 	for (int dev = 0; dev < num_devices; ++dev)
 	{
 		// Get a device handle from an ordinal.
@@ -145,19 +147,38 @@ int main(int argc, char* argv[])
 		// Check if the device can map host memory into CUDA address space.
 		checkCudaErrors(cuDeviceGetAttribute(&can_map_host_memory[dev], CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY, device));
 
-		// Create context, module and function.
-		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | CU_CTX_MAP_HOST, device));
+		// Create context.
+		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | (can_map_host_memory[dev] ? CU_CTX_MAP_HOST : 0), device));
 
+		// Create stream.
 		checkCudaErrors(cuStreamCreate(&streams[dev], CU_STREAM_NON_BLOCKING));
 
+		// Load module.
 		CUmodule module;
 		checkCudaErrors(cuModuleLoad(&module, "monte_carlo.fatbin")); // nvcc -cubin -arch=sm_11 -G, and use cuda-gdb
+
+		// Get function from module.
 		checkCudaErrors(cuModuleGetFunction(&functions[dev], module, "monte_carlo"));
 
 		// Initialize symbols.
-		CUdeviceptr d_p;
-		checkCudaErrors(cuModuleGetGlobal(&d_p, NULL, module, "p"));
-		checkCudaErrors(cuMemcpyHtoD(d_p, h_p, sizeof(float) * 16));
+		CUdeviceptr prmd;
+		size_t prms;
+		checkCudaErrors(cuModuleGetGlobal(&prmd, &prms, module, "p"));
+		assert(prms == sizeof(float) * 16);
+		checkCudaErrors(cuMemcpyHtoD(prmd, prmh, prms));
+
+		// Allocate ligh, ligd, slnd and cnfh.
+		checkCudaErrors(cuMemHostAlloc((void**)&ligh[dev], sizeof(float) * lws, can_map_host_memory[dev] ? CU_MEMHOSTALLOC_DEVICEMAP : 0));
+		if (can_map_host_memory[dev])
+		{
+			checkCudaErrors(cuMemHostGetDevicePointer(&ligd[dev], ligh[dev], 0));
+		}
+		else
+		{
+			checkCudaErrors(cuMemAlloc(&ligd[dev], sizeof(float) * lws));
+		}
+		checkCudaErrors(cuMemAlloc(&slnd[dev], sizeof(float) * gws));
+		checkCudaErrors(cuMemHostAlloc((void**)&cnfh[dev], sizeof(float) * lws, 0));
 
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
@@ -181,7 +202,7 @@ int main(int argc, char* argv[])
 		ligand lig(dir_iter->path());
 
 		// Check for new atom types
-		const size_t num_types = 4;
+		const size_t num_types = 1;
 		if (num_types)
 		{
 			cnt.init(num_types);
@@ -189,21 +210,22 @@ int main(int argc, char* argv[])
 			{
 				ioh.post([&]()
 				{
+					spin(1e+5);
 					cnt.increment();
 				});
 			}
 			cnt.wait();
 
-			const size_t numBytes = sizeof(float) * 1e+5;
+			const size_t map_bytes = sizeof(float) * 1e+5;
 			for (auto& context : contexts)
 			{
 				checkCudaErrors(cuCtxPushCurrent(context));
-				float* h_e;
-				checkCudaErrors(cuMemHostAlloc((void**)&h_e, numBytes, 0));
-				CUdeviceptr d_e;
-				checkCudaErrors(cuMemAlloc(&d_e, numBytes));
-				checkCudaErrors(cuMemcpyHtoD(d_e, h_e, numBytes));
-				checkCudaErrors(cuMemFreeHost(h_e));
+				float* maph;
+				checkCudaErrors(cuMemHostAlloc((void**)&maph, map_bytes, 0));
+				CUdeviceptr mapd;
+				checkCudaErrors(cuMemAlloc(&mapd, map_bytes));
+				checkCudaErrors(cuMemcpyHtoD(mapd, maph, map_bytes));
+				checkCudaErrors(cuMemFreeHost(maph));
 				checkCudaErrors(cuCtxPopCurrent(NULL));
 			}
 		}
@@ -213,57 +235,62 @@ int main(int argc, char* argv[])
 
 		iod.post(bind<void>([&,dev](ligand& lig)
 		{
+			// Push the context of the chosen device.
 			checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
-			float* h_l;
-			checkCudaErrors(cuMemHostAlloc((void**)&h_l, sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
-			lig.encode(h_l, lws);
-			CUdeviceptr d_l;
-			if (can_map_host_memory[dev])
-			{
-				checkCudaErrors(cuMemHostGetDevicePointer(&d_l, h_l, 0));
-			}
-			else
-			{
-				checkCudaErrors(cuMemAlloc(&d_l, sizeof(float) * lws));
-				checkCudaErrors(cuMemcpyHtoDAsync(d_l, h_l, sizeof(float) * lws, NULL));
-			}
-			CUdeviceptr d_s;
-			checkCudaErrors(cuMemAlloc(&d_s, sizeof(float) * gws));
-			checkCudaErrors(cuMemsetD32Async(d_s, 0, gws, NULL));
-			void* params[] = { &d_s, &d_l };
-			checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, 0, NULL, params, NULL));
-			float* h_e;
-			checkCudaErrors(cuMemHostAlloc((void**)&h_e, sizeof(float) * lws, 0));
-			checkCudaErrors(cuMemcpyDtoHAsync(h_e, d_s, sizeof(float) * lws, NULL));
-			checkCudaErrors(cuCtxSynchronize());
-			checkCudaErrors(cuMemFree(d_s));
+
+			// Encode the current ligand.
+			lig.encode(ligh[dev], lws);
+
+			// Copy ligand from host memory to device memory if necessary.
+			const size_t lig_bytes = sizeof(float) * lws;
 			if (!can_map_host_memory[dev])
 			{
-				checkCudaErrors(cuMemFree(d_l));
+				checkCudaErrors(cuMemcpyHtoDAsync(ligd[dev], ligh[dev], lig_bytes, streams[dev]));
 			}
+
+			// Clear the solution buffer.
+			checkCudaErrors(cuMemsetD32Async(slnd[dev], 0, gws, streams[dev]));
+
+			// Launch kernel.
+			void* params[] = { &slnd[dev], &ligd[dev] };
+			checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, lig_bytes, streams[dev], params, NULL));
+
+			// Copy conformations from device memory to host memory.
+			checkCudaErrors(cuMemcpyDtoHAsync(cnfh[dev], slnd[dev], sizeof(float) * lws, streams[dev]));
+
+			// Synchronize.
+			checkCudaErrors(cuStreamSynchronize(streams[dev]));
+
+			// Validate results.
 			for (int i = 0; i < lws; ++i)
 			{
-				const float actual = h_e[i];
-				const float expected = h_l[i] * 2.0f + 1.0f + h_p[i % 16];
+				const float actual = cnfh[dev][i];
+				const float expected = ligh[dev][i] * 2.0f + 1.0f + prmh[i % 16];
 				if (fabs(actual - expected) > 1e-7)
 				{
-					printf("h_e[%d] = %f, expected = %f\n", i, actual, expected);
+					printf("cnfh[%d] = %f, expected = %f\n", i, actual, expected);
 					break;
 				}
 			}
-			checkCudaErrors(cuMemFreeHost(h_l));
-			lig.write(h_e);
+
+			// Write conformations.
+			lig.write(cnfh[dev]);
+
+			// Output and save ligand stem and predicted affinities.
 			safe_print([&]()
 			{
 				cout << setw(2) << ++num_ligands << setw(20) << lig.filename.string() << setw(2) << dev << ' ';
 				for (int i = 0; i < 9; ++i)
 				{
-					cout << setw(6) << h_e[i];
+					cout << setw(6) << cnfh[dev][i];
 				}
 				cout << endl;
 			});
-			checkCudaErrors(cuMemFreeHost(h_e));
+
+			// Pop the context after use.
 			checkCudaErrors(cuCtxPopCurrent(NULL));
+
+			// Signal the main thread to post another task.
 			idle.safe_push_back(dev);
 		}, move(lig)));
 	}
