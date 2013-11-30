@@ -155,7 +155,7 @@ int main(int argc, char* argv[])
 	cout << "Parsing receptor " << receptor_path << endl;
 	receptor rec(receptor_path);
 
-	cout << "Detecting CUDA devices and just-in-time compiling modules" << endl;
+	cout << "Detecting CUDA devices" << endl;
 	checkCudaErrors(cuInit(0));
 	int num_devices;
 	checkCudaErrors(cuDeviceGetCount(&num_devices));
@@ -164,9 +164,20 @@ int main(int argc, char* argv[])
 		cerr << "No CUDA devices detected" << endl;
 		return 2;
 	}
+	vector<int> can_map_host_memory(num_devices);
+	for (int dev = 0; dev < num_devices; ++dev)
+	{
+		// Get a device handle from an ordinal.
+		CUdevice device;
+		checkCudaErrors(cuDeviceGet(&device, dev));
+
+		// Check if the device can map host memory into CUDA address space.
+		checkCudaErrors(cuDeviceGetAttribute(&can_map_host_memory[dev], CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY, device));
+	}
+
+	cout << "Compiling modules for " << num_devices << " devices" << endl;
 	std::ifstream ifs("multiDevice.fatbin", ios::binary);
 	auto image = vector<char>((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
-	vector<int> can_map_host_memory(num_devices);
 	vector<CUcontext> contexts(num_devices);
 	vector<CUstream> streams(num_devices);
 	vector<CUfunction> functions(num_devices);
@@ -180,9 +191,6 @@ int main(int argc, char* argv[])
 		// Get a device handle from an ordinal.
 		CUdevice device;
 		checkCudaErrors(cuDeviceGet(&device, dev));
-
-		// Check if the device can map host memory into CUDA address space.
-		checkCudaErrors(cuDeviceGetAttribute(&can_map_host_memory[dev], CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY, device));
 
 		// Create context.
 		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | (can_map_host_memory[dev] ? CU_CTX_MAP_HOST : 0), device));
