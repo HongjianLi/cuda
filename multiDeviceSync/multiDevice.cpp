@@ -19,16 +19,16 @@ public:
 		spin(1e+4);
 	}
 
-	void encode(float* const h_l, const unsigned int lws)
+	void encode(float* const ligh, const unsigned int lws) const
 	{
 		for (int i = 0; i < lws; ++i)
 		{
-			h_l[i] = rand() / static_cast<float>(RAND_MAX);
+			ligh[i] = rand() / static_cast<float>(RAND_MAX);
 		}
 		spin(1e+3);
 	}
 
-	void write(const float* const h_e) const
+	void write(const float* const cnfh) const
 	{
 		spin(1e+5);
 	}
