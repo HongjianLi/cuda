@@ -155,7 +155,7 @@ int main(int argc, char* argv[])
 
 		// Load module.
 		CUmodule module;
-		checkCudaErrors(cuModuleLoad(&module, "monte_carlo.fatbin")); // nvcc -cubin -arch=sm_11 -G, and use cuda-gdb
+		checkCudaErrors(cuModuleLoad(&module, "multiDevice.fatbin")); // nvcc -fatbin -arch=sm_11 -G, and use cuda-gdb
 
 		// Get function from module.
 		checkCudaErrors(cuModuleGetFunction(&functions[dev], module, "monte_carlo"));
