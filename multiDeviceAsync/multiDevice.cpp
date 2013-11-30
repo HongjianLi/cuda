@@ -113,8 +113,13 @@ template <typename T>
 class callback_data : public callback_data_base<T>
 {
 public:
-	callback_data(const T dev, safe_vector<T>& idle, io_service_pool& io, ligand&& lig_) : callback_data_base<T>(dev, idle), io(io), lig(move(lig_)) {}
+	callback_data(const T dev, safe_vector<T>& idle, io_service_pool& io, vector<float*>& cnfh, vector<float*>& ligh, vector<float>& prmh, safe_function& safe_print, size_t& num_ligands, ligand&& lig_) : callback_data_base<T>(dev, idle), io(io), cnfh(cnfh), ligh(ligh), prmh(prmh), safe_print(safe_print), num_ligands(num_ligands), lig(move(lig_)) {}
 	io_service_pool& io;
+	vector<float*>& cnfh;
+	vector<float*>& ligh;
+	vector<float> & prmh;
+	safe_function& safe_print;
+	size_t& num_ligands;
 	ligand lig;
 };
 
@@ -138,15 +143,16 @@ int main(int argc, char* argv[])
 
 	// Initialize variables.
 	srand(time(0));
-	auto prmh = static_cast<float*>(malloc(sizeof(float) * 16));
-	for (int i = 0; i < 16; ++i)
+	vector<float> prmh(16);
+	for (auto& prm : prmh)
 	{
-		prmh[i] = rand() / static_cast<float>(RAND_MAX);
+		prm = rand() / static_cast<float>(RAND_MAX);
 	}
 
 	// Create an io service pool for host.
 	io_service_pool ioh(num_threads);
 	safe_counter<size_t> cnt;
+	safe_function safe_print;
 
 	// Initialize containers of contexts, streams and functions.
 	vector<CUcontext> contexts;
@@ -202,7 +208,7 @@ int main(int argc, char* argv[])
 		size_t prms;
 		checkCudaErrors(cuModuleGetGlobal(&prmd, &prms, module, "p"));
 		assert(prms == sizeof(float) * 16);
-		checkCudaErrors(cuMemcpyHtoD(prmd, prmh, prms));
+		checkCudaErrors(cuMemcpyHtoD(prmd, prmh.data(), prms));
 
 		// Allocate ligh, ligd, slnd and cnfh.
 		checkCudaErrors(cuMemHostAlloc((void**)&ligh[dev], sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
@@ -291,15 +297,22 @@ int main(int argc, char* argv[])
 			checkCudaErrors(error);
 			const auto cbdp = reinterpret_cast<callback_data<int>*>(data);
 
-			cbdp->io.post([cbdp]()
+			cbdp->io.post([=]()
 			{
 				const auto cbd = unique_ptr<callback_data<int>>(cbdp);
+				const auto dev = cbd->dev;
+				const auto& cnfh = cbd->cnfh;
+				const auto& ligh = cbd->ligh;
+				const auto& prmh = cbd->prmh;
+				auto& safe_print = cbd->safe_print;
+				auto& num_ligands = cbd->num_ligands;
+				auto& lig = cbd->lig;
 
-/*				// Validate results.
+				// Validate results.
 				for (int i = 0; i < lws; ++i)
 				{
-					const float actual = cnfh[i];
-					const float expected = ligh[i] * 2.0f + 1.0f + prmh[i % 16];
+					const float actual = cnfh[dev][i];
+					const float expected = ligh[dev][i] * 2.0f + 1.0f + prmh[i % 16];
 					if (fabs(actual - expected) > 1e-7)
 					{
 						printf("cnfh[%d] = %f, expected = %f\n", i, actual, expected);
@@ -308,7 +321,7 @@ int main(int argc, char* argv[])
 				}
 
 				// Write conformations.
-				lig.write(cnfh);
+				lig.write(cnfh[dev]);
 
 				// Output and save ligand stem and predicted affinities.
 				safe_print([&]()
@@ -316,15 +329,15 @@ int main(int argc, char* argv[])
 					cout << setw(2) << ++num_ligands << setw(20) << lig.filename.string() << setw(2) << dev << ' ';
 					for (int i = 0; i < 9; ++i)
 					{
-						cout << setw(6) << h_e[i];
+						cout << setw(6) << cnfh[dev][i];
 					}
 					cout << endl;
-				});*/
+				});
 
 				// Signal the main thread to post another task.
 				cbd->idle.safe_push_back(cbd->dev);
 			});
-		}, new callback_data<int>(dev, idle, ioh, move(lig)), 0));
+		}, new callback_data<int>(dev, idle, ioh, cnfh, ligh, prmh, safe_print, num_ligands, move(lig)), 0));
 
 		// Pop the context after use.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
