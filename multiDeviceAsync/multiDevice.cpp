@@ -1,6 +1,7 @@
 #include <iostream>
 #include <iomanip>
 #include <ctime>
+#include <fstream>
 #include <boost/filesystem/operations.hpp>
 #include "../cu_helper.h"
 #include "io_service_pool.hpp"
@@ -11,14 +12,45 @@ void spin(const clock_t num_clocks)
 	for (const clock_t threshold = clock() + num_clocks; clock() < threshold;);
 }
 
+class scoring_function
+{
+public:
+	static const size_t n = 15;
+};
+
+class atom
+{
+public:
+	atom() : xs(rand() % scoring_function::n) {}
+	size_t xs;
+};
+
+class receptor
+{
+public:
+	array<int, 3> num_probes;
+	size_t num_probes_product;
+	vector<vector<float>> maps;
+	explicit receptor(const path& p) : num_probes({100, 80, 70}), num_probes_product(1), maps(scoring_function::n)
+	{
+		for (size_t i = 0; i < 3; ++i)
+		{
+			num_probes_product *= num_probes[i];
+		}
+	}
+	void populate(const scoring_function& sf, const vector<size_t>& xs, const size_t z)
+	{
+		spin(1e+5);
+	}
+};
+
 class ligand
 {
 public:
-	explicit ligand(const path& p) : filename(p.filename())
+	explicit ligand(const path& p) : filename(p.filename()), atoms(rand() % 10)
 	{
 		spin(1e+4);
 	}
-
 	void encode(float* const ligh, const unsigned int lws) const
 	{
 		for (int i = 0; i < lws; ++i)
@@ -27,14 +59,12 @@ public:
 		}
 		spin(1e+3);
 	}
-
 	void write(const float* const cnfh) const
 	{
 		spin(1e+5);
 	}
-
 	path filename;
-	vector<int> atoms;
+	vector<atom> atoms;
 };
 
 class safe_function
@@ -99,21 +129,13 @@ private:
 	condition_variable cv;
 };
 
-
 template <typename T>
-class callback_data_base
+class callback_data
 {
 public:
-	callback_data_base(const T dev, safe_vector<T>& idle) : dev(dev), idle(idle) {}
+	callback_data(const T dev, safe_vector<T>& idle, io_service_pool& io, vector<float*>& cnfh, vector<float*>& ligh, vector<float>& prmh, safe_function& safe_print, size_t& num_ligands, ligand&& lig_) : dev(dev), idle(idle), io(io), cnfh(cnfh), ligh(ligh), prmh(prmh), safe_print(safe_print), num_ligands(num_ligands), lig(move(lig_)) {}
 	const T dev;
 	safe_vector<T>& idle;
-};
-
-template <typename T>
-class callback_data : public callback_data_base<T>
-{
-public:
-	callback_data(const T dev, safe_vector<T>& idle, io_service_pool& io, vector<float*>& cnfh, vector<float*>& ligh, vector<float>& prmh, safe_function& safe_print, size_t& num_ligands, ligand&& lig_) : callback_data_base<T>(dev, idle), io(io), cnfh(cnfh), ligh(ligh), prmh(prmh), safe_print(safe_print), num_ligands(num_ligands), lig(move(lig_)) {}
 	io_service_pool& io;
 	vector<float*>& cnfh;
 	vector<float*>& ligh;
@@ -130,17 +152,6 @@ int main(int argc, char* argv[])
 	const unsigned int gws = 32 * lws;
 	const unsigned int num_threads = thread::hardware_concurrency();
 
-	// Get the number of devices with compute capability 1.0 or greater that are available for execution.
-	cout << "Detecting CUDA devices" << endl;
-	checkCudaErrors(cuInit(0));
-	int num_devices;
-	checkCudaErrors(cuDeviceGetCount(&num_devices));
-	if (!num_devices)
-	{
-		cerr << "No CUDA devices detected" << endl;
-		return 2;
-	}
-
 	// Initialize variables.
 	srand(time(0));
 	vector<float> prmh(16);
@@ -149,28 +160,29 @@ int main(int argc, char* argv[])
 		prm = rand() / static_cast<float>(RAND_MAX);
 	}
 
-	// Create an io service pool for host.
-	io_service_pool ioh(num_threads);
+	cout << "Creating an io service pool of " << num_threads << " worker threads" << endl;
+	io_service_pool io(num_threads);
 	safe_counter<size_t> cnt;
 	safe_function safe_print;
 
-	// Initialize containers of contexts, streams and functions.
-	vector<CUcontext> contexts;
-	vector<CUstream> streams;
-	vector<CUfunction> functions;
-	vector<float*> ligh;
-	vector<CUdeviceptr> ligd;
-	vector<CUdeviceptr> slnd;
-	vector<float*> cnfh;
-	safe_vector<int> idle;
-	contexts.reserve(num_devices);
-	streams.reserve(num_devices);
-	functions.reserve(num_devices);
-	ligh.reserve(num_devices);
-	ligd.reserve(num_devices);
-	slnd.reserve(num_devices);
-	cnfh.reserve(num_devices);
-	idle.reserve(num_devices);
+	cout << "Precalculating a scoring function of " << scoring_function::n << " atom types in parallel" << endl;
+	scoring_function sf;
+
+	path receptor_path;
+	cout << "Parsing receptor " << receptor_path << endl;
+	receptor rec(receptor_path);
+
+	cout << "Detecting CUDA devices with compute capability 1.1" << endl;
+	checkCudaErrors(cuInit(0));
+	int num_devices;
+	checkCudaErrors(cuDeviceGetCount(&num_devices));
+	if (!num_devices)
+	{
+		cerr << "No CUDA devices detected" << endl;
+		return 2;
+	}
+	vector<CUdevice> devices;
+	devices.reserve(num_devices);
 	for (int dev = 0; dev < num_devices; ++dev)
 	{
 		// Get a device handle.
@@ -187,21 +199,36 @@ int main(int argc, char* argv[])
 			if (compute_capability_minor < 1) continue;
 		}
 
+		// Save the device handle.
+		devices.push_back(device);
+	}
+	num_devices = devices.size();
+
+	cout << "Compiling modules for " << num_devices << " devices" << endl;
+	std::ifstream ifs("multiDevice.fatbin", ios::binary);
+	auto image = vector<char>((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
+	vector<CUcontext> contexts(num_devices);
+	vector<CUstream> streams(num_devices);
+	vector<CUfunction> functions(num_devices);
+	vector<vector<size_t>> xst(num_devices);
+	vector<float*> ligh(num_devices);
+	vector<CUdeviceptr> ligd(num_devices);
+	vector<CUdeviceptr> slnd(num_devices);
+	vector<float*> cnfh(num_devices);
+	for (int dev = 0; dev < num_devices; ++dev)
+	{
 		// Create context.
-		CUcontext context;
-		checkCudaErrors(cuCtxCreate(&context, CU_CTX_SCHED_AUTO | CU_CTX_MAP_HOST, device));
+		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | CU_CTX_MAP_HOST, devices[dev]));
 
 		// Create stream.
-		CUstream stream;
-		checkCudaErrors(cuStreamCreate(&stream, CU_STREAM_NON_BLOCKING));
+		checkCudaErrors(cuStreamCreate(&streams[dev], CU_STREAM_NON_BLOCKING));
 
 		// Load module.
 		CUmodule module;
-		checkCudaErrors(cuModuleLoad(&module, "multiDevice.fatbin")); // nvcc -fatbin -arch=sm_11 -G, and use cuda-gdb
+		checkCudaErrors(cuModuleLoadData(&module, image.data()));
 
 		// Get function from module.
-		CUfunction function;
-		checkCudaErrors(cuModuleGetFunction(&function, module, "monte_carlo"));
+		checkCudaErrors(cuModuleGetFunction(&functions[dev], module, "monte_carlo"));
 
 		// Initialize symbols.
 		CUdeviceptr prmd;
@@ -210,30 +237,25 @@ int main(int argc, char* argv[])
 		assert(prms == sizeof(float) * 16);
 		checkCudaErrors(cuMemcpyHtoD(prmd, prmh.data(), prms));
 
+		// Reserve space for xst.
+		xst[dev].reserve(sf.n);
+
 		// Allocate ligh, ligd, slnd and cnfh.
 		checkCudaErrors(cuMemHostAlloc((void**)&ligh[dev], sizeof(float) * lws, CU_MEMHOSTALLOC_DEVICEMAP));
 		checkCudaErrors(cuMemHostGetDevicePointer(&ligd[dev], ligh[dev], 0));
 		checkCudaErrors(cuMemAlloc(&slnd[dev], sizeof(float) * gws));
 		checkCudaErrors(cuMemHostAlloc((void**)&cnfh[dev], sizeof(float) * lws, 0));
 
-		// Enqueue a synchronization event to make sure the device is ready for execution.
-		checkCudaErrors(cuStreamAddCallback(NULL, []CUDA_CB (CUstream stream, CUresult error, void* data)
-		{
-			checkCudaErrors(error);
-			const auto cbd = unique_ptr<callback_data_base<int>>(reinterpret_cast<callback_data_base<int>*>(data));
-			cbd->idle.safe_push_back(cbd->dev);
-		}, new callback_data_base<int>(contexts.size(), idle), 0));
-
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
-
-		// Save context, stream and function.
-		contexts.push_back(context);
-		streams.push_back(stream);
-		functions.push_back(function);
 	}
+	image.clear();
 
-	// Loop over the ligands in the specified folder.
+	// Initialize a vector of idle devices.
+	safe_vector<int> idle(num_devices);
+	iota(idle.begin(), idle.end(), 0);
+
+	// Perform docking for each ligand in the input folder.
 	size_t num_ligands = 0;
 	cout.setf(ios::fixed, ios::floatfield);
 	cout << "ID              Ligand D  pKd 1     2     3     4     5     6     7     8     9" << endl << setprecision(2);
@@ -242,32 +264,32 @@ int main(int argc, char* argv[])
 		// Parse the ligand.
 		ligand lig(dir_iter->path());
 
-		// Check for new atom types
-		const size_t num_types = 4;
-		if (num_types)
+		// Find atom types that are presented in the current ligand but not presented in the grid maps.
+		vector<size_t> xs;
+		for (const atom& a : lig.atoms)
 		{
-			cnt.init(num_types);
-			for (size_t i = 0; i < num_types; ++i)
+			const size_t t = a.xs;
+			if (rec.maps[t].empty())
 			{
-				ioh.post([&]()
+				rec.maps[t].resize(rec.num_probes_product);
+				xs.push_back(t);
+			}
+		}
+
+		// Create grid maps on the fly if necessary.
+		if (xs.size())
+		{
+			// Create grid maps in parallel.
+			cnt.init(rec.num_probes[2]);
+			for (size_t z = 0; z < rec.num_probes[2]; ++z)
+			{
+				io.post([&,z]()
 				{
+					rec.populate(sf, xs, z);
 					cnt.increment();
 				});
 			}
 			cnt.wait();
-
-			const size_t map_bytes = sizeof(float) * 1e+5;
-			for (auto& context : contexts)
-			{
-				checkCudaErrors(cuCtxPushCurrent(context));
-				float* maph;
-				checkCudaErrors(cuMemHostAlloc((void**)&maph, map_bytes, 0));
-				CUdeviceptr mapd;
-				checkCudaErrors(cuMemAlloc(&mapd, map_bytes));
-				checkCudaErrors(cuMemcpyHtoD(mapd, maph, map_bytes));
-				checkCudaErrors(cuMemFreeHost(maph));
-				checkCudaErrors(cuCtxPopCurrent(NULL));
-			}
 		}
 
 		// Wait until a device is ready for execution.
@@ -279,6 +301,7 @@ int main(int argc, char* argv[])
 		// Encode the current ligand.
 		lig.encode(ligh[dev], lws);
 
+		// Compute the number of shared memory bytes.
 		const size_t lig_bytes = sizeof(float) * lws;
 
 		// Clear the solution buffer.
@@ -291,7 +314,7 @@ int main(int argc, char* argv[])
 		// Copy conformations from device memory to host memory.
 		checkCudaErrors(cuMemcpyDtoHAsync(cnfh[dev], slnd[dev], sizeof(float) * lws, streams[dev]));
 
-		// Add callback.
+		// Add a callback to the compute stream.
 		checkCudaErrors(cuStreamAddCallback(streams[dev], []CUDA_CB (CUstream stream, CUresult error, void* data)
 		{
 			checkCudaErrors(error);
@@ -299,6 +322,7 @@ int main(int argc, char* argv[])
 
 			cbdp->io.post([=]()
 			{
+				// Wrapped the callback data pointer.
 				const auto cbd = unique_ptr<callback_data<int>>(cbdp);
 				const auto dev = cbd->dev;
 				const auto& cnfh = cbd->cnfh;
@@ -337,14 +361,14 @@ int main(int argc, char* argv[])
 				// Signal the main thread to post another task.
 				cbd->idle.safe_push_back(cbd->dev);
 			});
-		}, new callback_data<int>(dev, idle, ioh, cnfh, ligh, prmh, safe_print, num_ligands, move(lig)), 0));
+		}, new callback_data<int>(dev, idle, io, cnfh, ligh, prmh, safe_print, num_ligands, move(lig)), 0));
 
 		// Pop the context after use.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
 	}
 
-	// Wait until the io service for host has finished all its tasks.
-	ioh.wait();
+	// Wait until the io service pool has finished all its tasks.
+	io.wait();
 
 	// Destroy contexts.
 	for (auto& context : contexts)
