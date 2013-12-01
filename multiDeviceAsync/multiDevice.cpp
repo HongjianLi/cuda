@@ -172,7 +172,7 @@ int main(int argc, char* argv[])
 	cout << "Parsing receptor " << receptor_path << endl;
 	receptor rec(receptor_path);
 
-	cout << "Detecting CUDA devices with compute capability 1.1" << endl;
+	cout << "Detecting CUDA devices with compute capability 1.1 or greater" << endl;
 	checkCudaErrors(cuInit(0));
 	int num_devices;
 	checkCudaErrors(cuDeviceGetCount(&num_devices));
@@ -189,7 +189,7 @@ int main(int argc, char* argv[])
 		CUdevice device;
 		checkCudaErrors(cuDeviceGet(&device, dev));
 
-		// Filter devices with compute capability 1.1 or greater, which is required by cuStreamAddCallback and cuMemHostGetDevicePointer.
+		// Filter devices with compute capability 1.1 or greater, which is required by cuMemHostGetDevicePointer and cuStreamAddCallback.
 		int compute_capability_major;
 		checkCudaErrors(cuDeviceGetAttribute(&compute_capability_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, device));
 		if (compute_capability_major == 1)
@@ -297,6 +297,30 @@ int main(int argc, char* argv[])
 
 		// Push the context of the chosen device.
 		checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
+
+		// Find atom types that are presented in the current ligand but are not yet copied to device memory.
+		xs.clear();
+		for (const atom& a : lig.atoms)
+		{
+			const size_t t = a.xs;
+			if (find(xst[dev].cbegin(), xst[dev].cend(), t) == xst[dev].cend())
+			{
+				xst[dev].push_back(t);
+				xs.push_back(t);
+			}
+		}
+
+		// Copy grid maps from host memory to device memory if necessary.
+		if (xs.size())
+		{
+			const size_t map_bytes = sizeof(float) * rec.num_probes_product;
+			for (const auto t : xs)
+			{
+				CUdeviceptr mapd;
+				checkCudaErrors(cuMemAlloc(&mapd, map_bytes));
+				checkCudaErrors(cuMemcpyHtoD(mapd, rec.maps[t].data(), map_bytes));
+			}
+		}
 
 		// Encode the current ligand.
 		lig.encode(ligh[dev], lws);
