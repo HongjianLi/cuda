@@ -368,6 +368,7 @@ int main(int argc, char* argv[])
 
 	// Wait until the io service for device has finished all its tasks.
 	iod.wait();
+	assert(idle.size() == num_devices);
 
 	// Destroy contexts.
 	for (auto& context : contexts)
