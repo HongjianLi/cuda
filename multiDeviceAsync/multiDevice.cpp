@@ -389,8 +389,17 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuCtxPopCurrent(NULL));
 	}
 
+	// Synchronize contexts.
+	for (auto& context : contexts)
+	{
+		checkCudaErrors(cuCtxPushCurrent(context));
+		checkCudaErrors(cuCtxSynchronize());
+		checkCudaErrors(cuCtxPopCurrent(NULL));
+	}
+
 	// Wait until the io service pool has finished all its tasks.
 	io.wait();
+	assert(idle.size() == num_devices);
 
 	// Destroy contexts.
 	for (auto& context : contexts)
