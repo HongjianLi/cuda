@@ -133,16 +133,16 @@ template <typename T>
 class callback_data
 {
 public:
-	callback_data(const T dev, safe_vector<T>& idle, io_service_pool& io, vector<float*>& cnfh, vector<float*>& ligh, vector<float>& prmh, safe_function& safe_print, size_t& num_ligands, ligand&& lig_) : dev(dev), idle(idle), io(io), cnfh(cnfh), ligh(ligh), prmh(prmh), safe_print(safe_print), num_ligands(num_ligands), lig(move(lig_)) {}
+	callback_data(const T dev, safe_vector<T>& idle, io_service_pool& io, vector<float*>& cnfh, vector<float*>& ligh, vector<float>& prmh, safe_function& safe_print, size_t& num_ligands, ligand&& lig_) : dev(dev), idle(idle), io(io), cnfh(cnfh), ligh(ligh), prmh(prmh), lig(move(lig_), safe_print(safe_print), num_ligands(num_ligands)) {}
 	const T dev;
-	safe_vector<T>& idle;
 	io_service_pool& io;
 	vector<float*>& cnfh;
 	vector<float*>& ligh;
 	vector<float> & prmh;
+	ligand lig;
 	safe_function& safe_print;
 	size_t& num_ligands;
-	ligand lig;
+	safe_vector<T>& idle;
 };
 
 int main(int argc, char* argv[])
@@ -345,13 +345,14 @@ int main(int argc, char* argv[])
 			const shared_ptr<callback_data<int>> cbd(reinterpret_cast<callback_data<int>*>(data));
 			cbd->io.post([=]()
 			{
-				const auto dev = cbd->dev;
+				const auto   dev = cbd->dev;
 				const auto& cnfh = cbd->cnfh;
 				const auto& ligh = cbd->ligh;
 				const auto& prmh = cbd->prmh;
+				auto& lig = cbd->lig;
 				auto& safe_print = cbd->safe_print;
 				auto& num_ligands = cbd->num_ligands;
-				auto& lig = cbd->lig;
+				auto& idle = cbd->idle;
 
 				// Validate results.
 				for (int i = 0; i < lws; ++i)
@@ -380,9 +381,9 @@ int main(int argc, char* argv[])
 				});
 
 				// Signal the main thread to post another task.
-				cbd->idle.safe_push_back(cbd->dev);
+				idle.safe_push_back(dev);
 			});
-		}, new callback_data<int>(dev, idle, io, cnfh, ligh, prmh, safe_print, num_ligands, move(lig)), 0));
+		}, new callback_data<int>(dev, io, cnfh, ligh, prmh, move(lig), safe_print, num_ligands, idle), 0));
 
 		// Pop the context after use.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
