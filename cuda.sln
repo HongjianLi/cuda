@@ -15,6 +15,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vectorAdd", "vectorAdd\vect
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hyperQ", "hyperQ\hyperQ.vcxproj", "{CCA5BC93-4842-4D0E-AEC1-0B577C9784D6}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "multiDeviceSync", "multiDeviceSync\multiDeviceSync.vcxproj", "{18C1C79D-266C-45A1-8163-761A8285DBC1}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "multiDeviceAsync", "multiDeviceAsync\multiDeviceAsync.vcxproj", "{18C1C79D-266C-45A1-8163-761A8285DBC2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -45,6 +49,14 @@ Global
 		{CCA5BC93-4842-4D0E-AEC1-0B577C9784D6}.Debug|x64.Build.0 = Debug|x64
 		{CCA5BC93-4842-4D0E-AEC1-0B577C9784D6}.Release|x64.ActiveCfg = Release|x64
 		{CCA5BC93-4842-4D0E-AEC1-0B577C9784D6}.Release|x64.Build.0 = Release|x64
+		{18C1C79D-266C-45A1-8163-761A8285DBC1}.Debug|x64.ActiveCfg = Debug|x64
+		{18C1C79D-266C-45A1-8163-761A8285DBC1}.Debug|x64.Build.0 = Debug|x64
+		{18C1C79D-266C-45A1-8163-761A8285DBC1}.Release|x64.ActiveCfg = Release|x64
+		{18C1C79D-266C-45A1-8163-761A8285DBC1}.Release|x64.Build.0 = Release|x64
+		{18C1C79D-266C-45A1-8163-761A8285DBC2}.Debug|x64.ActiveCfg = Debug|x64
+		{18C1C79D-266C-45A1-8163-761A8285DBC2}.Debug|x64.Build.0 = Debug|x64
+		{18C1C79D-266C-45A1-8163-761A8285DBC2}.Release|x64.ActiveCfg = Release|x64
+		{18C1C79D-266C-45A1-8163-761A8285DBC2}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
