@@ -1,6 +1,8 @@
 #include <iostream>
 #include <iomanip>
 #include <ctime>
+#include <array>
+#include <numeric>
 #include <fstream>
 #include <boost/filesystem/operations.hpp>
 #include "../cu_helper.h"
