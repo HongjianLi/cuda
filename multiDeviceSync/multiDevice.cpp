@@ -9,9 +9,12 @@
 #include "io_service_pool.hpp"
 using namespace boost::filesystem;
 
-void spin(const clock_t num_clocks)
+void spin(const size_t n)
 {
-	for (const clock_t threshold = clock() + num_clocks; clock() < threshold;);
+	for (size_t i = 0; i < n; ++i)
+	{
+		rand();
+	}
 }
 
 class scoring_function
@@ -32,13 +35,10 @@ class receptor
 public:
 	array<int, 3> num_probes;
 	size_t num_probes_product;
+	size_t map_bytes;
 	vector<vector<float>> maps;
-	explicit receptor(const path& p) : num_probes({100, 80, 70}), num_probes_product(1), maps(scoring_function::n)
+	explicit receptor(const path& p) : num_probes({ 100, 80, 70 }), num_probes_product(num_probes[0] * num_probes[1] * num_probes[2]), map_bytes(sizeof(float) * num_probes_product), maps(scoring_function::n)
 	{
-		for (size_t i = 0; i < 3; ++i)
-		{
-			num_probes_product *= num_probes[i];
-		}
 	}
 	void populate(const scoring_function& sf, const vector<size_t>& xs, const size_t z)
 	{
@@ -51,6 +51,7 @@ class ligand
 public:
 	explicit ligand(const path& p) : filename(p.filename()), atoms(rand() % 10)
 	{
+		for (const auto& a : atoms) xs[a.xs] = true;
 		spin(1e+4);
 	}
 	void encode(float* const ligh, const unsigned int lws) const
@@ -67,6 +68,7 @@ public:
 	}
 	path filename;
 	vector<atom> atoms;
+	array<bool, scoring_function::n> xs;
 };
 
 class safe_function
@@ -183,7 +185,7 @@ int main(int argc, char* argv[])
 	vector<CUcontext> contexts(num_devices);
 	vector<CUstream> streams(num_devices);
 	vector<CUfunction> functions(num_devices);
-	vector<vector<size_t>> xst(num_devices);
+	vector<array<CUdeviceptr, sf.n>> mpsd(num_devices);
 	vector<float*> ligh(num_devices);
 	vector<CUdeviceptr> ligd(num_devices);
 	vector<CUdeviceptr> slnd(num_devices);
@@ -209,9 +211,6 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuModuleGetGlobal(&prmd, &prms, module, "p"));
 		assert(prms == sizeof(float) * 16);
 		checkCudaErrors(cuMemcpyHtoD(prmd, prmh.data(), prms));
-
-		// Reserve space for xst.
-		xst[dev].reserve(sf.n);
 
 		// Allocate ligh, ligd, slnd and cnfh.
 		checkCudaErrors(cuMemHostAlloc((void**)&ligh[dev], sizeof(float) * lws, can_map_host_memory[dev] ? CU_MEMHOSTALLOC_DEVICEMAP : 0));
@@ -250,10 +249,9 @@ int main(int argc, char* argv[])
 
 		// Find atom types that are presented in the current ligand but not presented in the grid maps.
 		vector<size_t> xs;
-		for (const atom& a : lig.atoms)
+		for (size_t t = 0; t < sf.n; ++t)
 		{
-			const size_t t = a.xs;
-			if (rec.maps[t].empty())
+			if (lig.xs[t] && rec.maps[t].empty())
 			{
 				rec.maps[t].resize(rec.num_probes_product);
 				xs.push_back(t);
@@ -284,27 +282,13 @@ int main(int argc, char* argv[])
 			// Push the context of the chosen device.
 			checkCudaErrors(cuCtxPushCurrent(contexts[dev]));
 
-			// Find atom types that are presented in the current ligand but are not yet copied to device memory.
-			vector<size_t> xs;
-			for (const atom& a : lig.atoms)
-			{
-				const size_t t = a.xs;
-				if (find(xst[dev].cbegin(), xst[dev].cend(), t) == xst[dev].cend())
-				{
-					xst[dev].push_back(t);
-					xs.push_back(t);
-				}
-			}
-
 			// Copy grid maps from host memory to device memory if necessary.
-			if (xs.size())
+			for (size_t t = 0; t < sf.n; ++t)
 			{
-				const size_t map_bytes = sizeof(float) * rec.num_probes_product;
-				for (const auto t : xs)
+				if (lig.xs[t] && !mpsd[dev][t])
 				{
-					CUdeviceptr mapd;
-					checkCudaErrors(cuMemAlloc(&mapd, map_bytes));
-					checkCudaErrors(cuMemcpyHtoD(mapd, rec.maps[t].data(), map_bytes));
+					checkCudaErrors(cuMemAlloc(&mpsd[dev][t], rec.map_bytes));
+					checkCudaErrors(cuMemcpyHtoD(mpsd[dev][t], rec.maps[t].data(), rec.map_bytes));
 				}
 			}
 
