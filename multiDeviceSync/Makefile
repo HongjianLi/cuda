@@ -4,7 +4,7 @@ NVCC=nvcc
 all: multiDevice multiDevice.fatbin
 
 multiDevice: multiDevice.o io_service_pool.o
-	$(CC) -o $@ $^ -L${BOOST_ROOT}/lib -lboost_system -lboost_filesystem -L${CUDA_ROOT}/lib64 -lcuda
+	$(CC) -o $@ $^ -pthread -L${BOOST_ROOT}/lib -lboost_system -lboost_filesystem -L${CUDA_ROOT}/lib64 -lcuda
 
 multiDevice.o: multiDevice.cpp
 	$(CC) -o $@ $< -c -I${BOOST_ROOT} -I${CUDA_ROOT}/include
