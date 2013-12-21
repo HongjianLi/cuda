@@ -179,7 +179,7 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuDeviceGetAttribute(&can_map_host_memory[dev], CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY, devices[dev]));
 	}
 
-	cout << "Compiling modules for " << num_devices << " devices" << endl;
+	cout << "Creating contexts and compiling modules for " << num_devices << " devices" << endl;
 	std::ifstream ifs("multiDevice.fatbin", ios::binary);
 	auto image = vector<char>((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
 	vector<CUcontext> contexts(num_devices);
