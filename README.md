@@ -32,3 +32,8 @@ hyperQ
 ------
 
 This sample uses multiple streams to exploit the HyperQ technology.
+
+multiDevice
+-----------
+
+This sample uses multiple devices to parallelize computation.
