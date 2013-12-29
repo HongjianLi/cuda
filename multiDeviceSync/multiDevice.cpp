@@ -49,17 +49,15 @@ public:
 class ligand
 {
 public:
-	explicit ligand(const path& p) : filename(p.filename()), atoms(rand() % 10)
+	explicit ligand(const path& p, const unsigned int lws) : filename(p.filename()), atoms(rand() % 10), ligh(lws)
 	{
 		for (const auto& a : atoms) xs[a.xs] = true;
+		for (auto& c : ligh) c = rand() / static_cast<float>(RAND_MAX);
 		spin(1e+4);
 	}
-	void encode(float* const ligh, const unsigned int lws) const
+	void encode(float* const ligh) const
 	{
-		for (int i = 0; i < lws; ++i)
-		{
-			ligh[i] = rand() / static_cast<float>(RAND_MAX);
-		}
+		memcpy(ligh, this->ligh.data(), sizeof(float) * this->ligh.size());
 		spin(1e+3);
 	}
 	void write(const float* const cnfh) const
@@ -69,6 +67,7 @@ public:
 	path filename;
 	vector<atom> atoms;
 	array<bool, scoring_function::n> xs;
+	vector<float> ligh;
 };
 
 class safe_function
@@ -181,9 +180,8 @@ int main(int argc, char* argv[])
 
 	cout << "Creating contexts and compiling modules for " << num_devices << " devices" << endl;
 	std::ifstream ifs("multiDevice.fatbin", ios::binary);
-	auto image = vector<char>((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
+	vector<char> source((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
 	vector<CUcontext> contexts(num_devices);
-	vector<CUstream> streams(num_devices);
 	vector<CUfunction> functions(num_devices);
 	vector<array<CUdeviceptr, sf.n>> mpsd(num_devices);
 	vector<float*> ligh(num_devices);
@@ -195,12 +193,9 @@ int main(int argc, char* argv[])
 		// Create context.
 		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | (can_map_host_memory[dev] ? CU_CTX_MAP_HOST : 0), devices[dev]));
 
-		// Create stream.
-		checkCudaErrors(cuStreamCreate(&streams[dev], CU_STREAM_DEFAULT));
-
 		// Load module.
 		CUmodule module;
-		checkCudaErrors(cuModuleLoadData(&module, image.data()));
+		checkCudaErrors(cuModuleLoadData(&module, source.data()));
 
 		// Get function from module.
 		checkCudaErrors(cuModuleGetFunction(&functions[dev], module, "monte_carlo"));
@@ -228,7 +223,7 @@ int main(int argc, char* argv[])
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
 	}
-	image.clear();
+	source.clear();
 
 	// Initialize a vector of idle devices.
 	safe_vector<int> idle(num_devices);
@@ -245,7 +240,7 @@ int main(int argc, char* argv[])
 	for (directory_iterator dir_iter("."), const_dir_iter; dir_iter != const_dir_iter; ++dir_iter)
 	{
 		// Parse the ligand.
-		ligand lig(dir_iter->path());
+		ligand lig(dir_iter->path(), lws);
 
 		// Find atom types that are presented in the current ligand but not presented in the grid maps.
 		vector<size_t> xs;
@@ -293,27 +288,27 @@ int main(int argc, char* argv[])
 			}
 
 			// Encode the current ligand.
-			lig.encode(ligh[dev], lws);
+			lig.encode(ligh[dev]);
 
 			// Copy ligand from host memory to device memory if necessary.
 			const size_t lig_bytes = sizeof(float) * lws;
 			if (!can_map_host_memory[dev])
 			{
-				checkCudaErrors(cuMemcpyHtoDAsync(ligd[dev], ligh[dev], lig_bytes, streams[dev]));
+				checkCudaErrors(cuMemcpyHtoDAsync(ligd[dev], ligh[dev], lig_bytes, NULL));
 			}
 
 			// Clear the solution buffer.
-			checkCudaErrors(cuMemsetD32Async(slnd[dev], 0, gws, streams[dev]));
+			checkCudaErrors(cuMemsetD32Async(slnd[dev], 0, gws, NULL));
 
 			// Launch kernel.
 			void* params[] = { &slnd[dev], &ligd[dev] };
-			checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, lig_bytes, streams[dev], params, NULL));
+			checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, lig_bytes, NULL, params, NULL));
 
 			// Copy conformations from device memory to host memory.
-			checkCudaErrors(cuMemcpyDtoHAsync(cnfh[dev], slnd[dev], sizeof(float) * lws, streams[dev]));
+			checkCudaErrors(cuMemcpyDtoHAsync(cnfh[dev], slnd[dev], sizeof(float) * lws, NULL));
 
 			// Synchronize.
-			checkCudaErrors(cuStreamSynchronize(streams[dev]));
+			checkCudaErrors(cuStreamSynchronize(NULL));
 
 			// Validate results.
 			for (int i = 0; i < lws; ++i)

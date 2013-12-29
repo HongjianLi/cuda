@@ -49,17 +49,15 @@ public:
 class ligand
 {
 public:
-	explicit ligand(const path& p) : filename(p.filename()), atoms(rand() % 10)
+	explicit ligand(const path& p, const unsigned int lws) : filename(p.filename()), atoms(rand() % 10), ligh(lws)
 	{
 		for (const auto& a : atoms) xs[a.xs] = true;
+		for (auto& c : ligh) c = rand() / static_cast<float>(RAND_MAX);
 		spin(1e+4);
 	}
-	void encode(float* const ligh, const unsigned int lws) const
+	void encode(float* const ligh) const
 	{
-		for (int i = 0; i < lws; ++i)
-		{
-			ligh[i] = rand() / static_cast<float>(RAND_MAX);
-		}
+		memcpy(ligh, this->ligh.data(), sizeof(float) * this->ligh.size());
 		spin(1e+3);
 	}
 	void write(const float* const cnfh) const
@@ -69,6 +67,7 @@ public:
 	path filename;
 	vector<atom> atoms;
 	array<bool, scoring_function::n> xs;
+	vector<float> ligh;
 };
 
 class safe_function
@@ -137,13 +136,12 @@ template <typename T>
 class callback_data
 {
 public:
-	callback_data(io_service_pool& io, const unsigned int lws, const T dev, vector<float*>& cnfh, vector<float*>& ligh, vector<float>& prmh, ligand&& lig_, safe_function& safe_print, size_t& num_ligands, safe_vector<T>& idle) : io(io), lws(lws), dev(dev), cnfh(cnfh), ligh(ligh), prmh(prmh), lig(move(lig_)), safe_print(safe_print), num_ligands(num_ligands), idle(idle) {}
+	callback_data(io_service_pool& io, const unsigned int lws, const T dev, const float* const cnfh, const float* const prmh, ligand&& lig_, safe_function& safe_print, size_t& num_ligands, safe_vector<T>& idle) : io(io), lws(lws), dev(dev), cnfh(cnfh), prmh(prmh), lig(move(lig_)), safe_print(safe_print), num_ligands(num_ligands), idle(idle) {}
 	io_service_pool& io;
 	const unsigned int lws;
 	const T dev;
-	const vector<float*>& cnfh;
-	const vector<float*>& ligh;
-	const vector<float> & prmh;
+	const float* const cnfh;
+	const float* const prmh;
 	ligand lig;
 	safe_function& safe_print;
 	size_t& num_ligands;
@@ -211,7 +209,7 @@ int main(int argc, char* argv[])
 
 	cout << "Compiling modules for " << num_devices << " devices" << endl;
 	std::ifstream ifs("multiDevice.fatbin", ios::binary);
-	auto image = vector<char>((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
+	vector<char> source((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
 	vector<CUcontext> contexts(num_devices);
 	vector<CUstream> streams(num_devices);
 	vector<CUfunction> functions(num_devices);
@@ -225,12 +223,9 @@ int main(int argc, char* argv[])
 		// Create context.
 		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | CU_CTX_MAP_HOST, devices[dev]));
 
-		// Create stream.
-		checkCudaErrors(cuStreamCreate(&streams[dev], CU_STREAM_DEFAULT));
-
 		// Load module.
 		CUmodule module;
-		checkCudaErrors(cuModuleLoadData(&module, image.data()));
+		checkCudaErrors(cuModuleLoadData(&module, source.data()));
 
 		// Get function from module.
 		checkCudaErrors(cuModuleGetFunction(&functions[dev], module, "monte_carlo"));
@@ -251,7 +246,7 @@ int main(int argc, char* argv[])
 		// Pop the current context.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
 	}
-	image.clear();
+	source.clear();
 
 	// Initialize a vector of idle devices.
 	safe_vector<int> idle(num_devices);
@@ -264,7 +259,7 @@ int main(int argc, char* argv[])
 	for (directory_iterator dir_iter("."), const_dir_iter; dir_iter != const_dir_iter; ++dir_iter)
 	{
 		// Parse the ligand.
-		ligand lig(dir_iter->path());
+		ligand lig(dir_iter->path(), lws);
 
 		// Find atom types that are presented in the current ligand but not presented in the grid maps.
 		vector<size_t> xs;
@@ -310,23 +305,23 @@ int main(int argc, char* argv[])
 		}
 
 		// Encode the current ligand.
-		lig.encode(ligh[dev], lws);
+		lig.encode(ligh[dev]);
 
 		// Compute the number of shared memory bytes.
 		const size_t lig_bytes = sizeof(float) * lws;
 
 		// Clear the solution buffer.
-		checkCudaErrors(cuMemsetD32Async(slnd[dev], 0, gws, streams[dev]));
+		checkCudaErrors(cuMemsetD32Async(slnd[dev], 0, gws, NULL));
 
 		// Launch kernel.
 		void* params[] = { &slnd[dev], &ligd[dev] };
-		checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, lig_bytes, streams[dev], params, NULL));
+		checkCudaErrors(cuLaunchKernel(functions[dev], gws / lws, 1, 1, lws, 1, 1, lig_bytes, NULL, params, NULL));
 
 		// Copy conformations from device memory to host memory.
-		checkCudaErrors(cuMemcpyDtoHAsync(cnfh[dev], slnd[dev], sizeof(float) * lws, streams[dev]));
+		checkCudaErrors(cuMemcpyDtoHAsync(cnfh[dev], slnd[dev], sizeof(float) * lws, NULL));
 
 		// Add a callback to the compute stream.
-		checkCudaErrors(cuStreamAddCallback(streams[dev], [](CUstream stream, CUresult error, void* data)
+		checkCudaErrors(cuStreamAddCallback(NULL, [](CUstream stream, CUresult error, void* data)
 		{
 			checkCudaErrors(error);
 			const shared_ptr<callback_data<int>> cbd(reinterpret_cast<callback_data<int>*>(data));
@@ -334,8 +329,7 @@ int main(int argc, char* argv[])
 			{
 				const auto   lws = cbd->lws;
 				const auto   dev = cbd->dev;
-				const auto& cnfh = cbd->cnfh;
-				const auto& ligh = cbd->ligh;
+				const auto  cnfh = cbd->cnfh;
 				const auto& prmh = cbd->prmh;
 				auto& lig = cbd->lig;
 				auto& safe_print = cbd->safe_print;
@@ -345,8 +339,8 @@ int main(int argc, char* argv[])
 				// Validate results.
 				for (int i = 0; i < lws; ++i)
 				{
-					const float actual = cnfh[dev][i];
-					const float expected = ligh[dev][i] * 2.0f + 1.0f + prmh[i % 16];
+					const float actual = cnfh[i];
+					const float expected = lig.ligh[i] * 2.0f + 1.0f + prmh[i % 16];
 					if (fabs(actual - expected) > 1e-7)
 					{
 						cerr << "cnfh[" << i << "] = " << actual << ", expected = " << expected << endl;
@@ -355,7 +349,7 @@ int main(int argc, char* argv[])
 				}
 
 				// Write conformations.
-				lig.write(cnfh[dev]);
+				lig.write(cnfh);
 
 				// Output and save ligand stem and predicted affinities.
 				safe_print([&]()
@@ -363,7 +357,7 @@ int main(int argc, char* argv[])
 					cout << setw(2) << ++num_ligands << setw(20) << lig.filename.string() << setw(2) << dev << ' ';
 					for (int i = 0; i < 9; ++i)
 					{
-						cout << setw(6) << cnfh[dev][i];
+						cout << setw(6) << cnfh[i];
 					}
 					cout << endl;
 				});
@@ -371,7 +365,7 @@ int main(int argc, char* argv[])
 				// Signal the main thread to post another task.
 				idle.safe_push_back(dev);
 			});
-		}, new callback_data<int>(io, lws, dev, cnfh, ligh, prmh, move(lig), safe_print, num_ligands, idle), 0));
+		}, new callback_data<int>(io, lws, dev, cnfh[dev], prmh.data(), move(lig), safe_print, num_ligands, idle), 0));
 
 		// Pop the context after use.
 		checkCudaErrors(cuCtxPopCurrent(NULL));
