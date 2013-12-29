@@ -226,7 +226,7 @@ int main(int argc, char* argv[])
 		checkCudaErrors(cuCtxCreate(&contexts[dev], CU_CTX_SCHED_AUTO | CU_CTX_MAP_HOST, devices[dev]));
 
 		// Create stream.
-		checkCudaErrors(cuStreamCreate(&streams[dev], CU_STREAM_NON_BLOCKING));
+		checkCudaErrors(cuStreamCreate(&streams[dev], CU_STREAM_DEFAULT));
 
 		// Load module.
 		CUmodule module;
