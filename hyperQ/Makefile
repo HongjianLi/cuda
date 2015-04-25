@@ -8,7 +8,7 @@ hyperQ.o: hyperQ.cpp
 	$(CC) -o $@ $< -c -I${CUDA_ROOT}/include
 
 hyperQ.cubin: hyperQ.cu
-	$(NVCC) -o $@ $< -arch=sm_11 -cubin
+	$(NVCC) -o $@ $< -arch=sm_30 -cubin
 
 clean:
 	rm -f hyperQ hyperQ.o hyperQ.cubin

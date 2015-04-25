@@ -8,7 +8,7 @@ zeroCopy.o: zeroCopy.cpp
 	$(CC) -o $@ $< -c -I${CUDA_ROOT}/include
 
 zeroCopy.cubin: zeroCopy.cu
-	$(NVCC) -o $@ $< -arch=sm_11 -cubin
+	$(NVCC) -o $@ $< -arch=sm_30 -cubin
 
 clean:
 	rm -f zeroCopy zeroCopy.o zeroCopy.cubin

@@ -13,7 +13,7 @@ io_service_pool.o: io_service_pool.cpp
 	$(CC) -o $@ $< -c -I${BOOST_ROOT}
 
 multiDevice.fatbin: multiDevice.cu
-	$(NVCC) -o $@ $< -arch=compute_11 -fatbin
+	$(NVCC) -o $@ $< -arch=compute_30 -fatbin
 
 clean:
 	rm -f multiDevice multiDevice.o io_service_pool.o multiDevice.fatbin
